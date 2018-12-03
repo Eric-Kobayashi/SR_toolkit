@@ -71,6 +71,7 @@ Some minor changes:
     5. More to cover...
     
 Potential features update:
+
     1. Create symlink for raw images.
     2. Integrate ImageJ analysis including GDSC SMLM, background correction, 
     find maxima (ThT counting), fiducial correction into the main analysis.
