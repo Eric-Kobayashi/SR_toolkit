@@ -1,9 +1,13 @@
 SR_toolkit_v3_0
 
 Created: 12-Nov-2018 17:40
+
 First published: 03-Dec-2018
+
 @author: Eric Kobayashi (Based on DRW's SR_toolkit_v2)
+
 Major changes over v2:
+
     1. Pack the functions in the v2 scripts into 3 classes and their methods:
         a. Analysis class - logs the analysis parameters, collects and saves the
         outputs, with the flexibility of packing more analysis in the class.
@@ -46,6 +50,7 @@ Major changes over v2:
     or Ripley's k function could be added in the features.
     
 Some minor changes:
+
     1. Remove the generate SR_mage, ThT maxima, cropping functionality. 
     The former two are more convenient done in imageJ, the latter will be added
     in a future version, cropping either space or time.
