@@ -408,30 +408,24 @@ class OrderedDefaultDict(OrderedDict):
                                                OrderedDict.__repr__(self))
                                                
 if __name__ == '__main__':
-    directory = r"C:\Users\yz520\Desktop\OneDrive - University Of Cambridge\igorplay\training_set2"
-    fit_filename = 'FitResults_feu_removed.txt'
+    directory = r"C:\Users\yz520\Desktop\OneDrive - University Of Cambridge\igorplay\training_set"
+    fit_filename = 'FitResults.txt'
     
     input_dict = {
-    'pixel_size': 97.7 , # nm
-    'DBSCAN_eps': 100 , # nm, not pixels!
-    'DBSCAN_min_samples': 10 ,
-    'sr_scale': 8 , # The scale used in length analysis and 
-                    # generation of super-res images 
+    'pixel_size': 107 , # nm
+    'DBSCAN_eps': 50 , # nm, not pixels!
+    'DBSCAN_min_samples': 1 ,
+    'sr_scale': 8 , # The scale used in length analysis and generation of super-res images 
     'frame_length': 50 , # ms, frame 
-    'burst_filter': {'run':True, 'fill_gap':50, 'min_burst':2} ,
+    'burst_filter': {'run':True, 'fill_gap':50, 'min_burst':4} ,
         # filter out the aggregates with less than min_bursts
     'burst_analysis': {'run':True, 'fill_gap':10, 'remove_single':True} ,
-    
+        # Analyse the burst number, burst length, dark length of the aggregates
     'length_measure': True ,
-    
-    'eccentricity_measure': True ,
-    
+    'eccentricity_measure': False ,
     'convexhull_measure': True , # Measure the area of the cluster
-    
-    'copy_analysis': True ,
-    
-    'save_GDSC_header_file': True ,
-    
+    'copy_analysis': True , # copy skeleton images, dbscan_results into the analysis folder
+    'save_GDSC_header_file': True , # save 
     'save_histogram':True}
     
     # Convert DBSCAN_eps from nm to pixels

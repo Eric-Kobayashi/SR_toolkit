@@ -155,7 +155,7 @@ class SR_fit(object):
         output_df = self.df[self.df.Cluster.isin(remain_cluster)].copy()
         # rename all the cluster number to 1, 2, 3,...
         cluster_dict = {v: k+1 for k, v in enumerate(remain_cluster)}
-        output_df.loc[:,'Cluster'] = output_df['Cluster'].map(cluster_dict)
+        output_df['Cluster'] = output_df['Cluster'].map(cluster_dict)
         self.clusterlist = [clu.update_num(cluster_dict) for 
             clu in self.clusterlist if clu.num in remain_cluster]
         self.df = output_df
@@ -463,7 +463,6 @@ class cluster_track(object):
         if not hasattr(self, 'skele'):
             self.skele = DF(columns=['X','Y'])
         self.skele = self.skele.append({'X':skele_xy[0], 'Y':skele_xy[1]}, ignore_index=True)
-
         
     def xy_coordinates(self):
         return self.df[['X','Y']].values
@@ -558,16 +557,16 @@ class cluster_track(object):
         
         '''
         
-        assert hasattr(self, 'skele'), "Run skeletonisation before measuring length!"
-               
-        xy = self.skele.values
-        length = 0
+        #assert hasattr(self, 'skele'), "Run skeletonisation before measuring length!"
+        length = 0             
+   
         try: # skip arrays with no sample
+            xy = self.skele.values
             nbrs = NearestNeighbors(radius = 1.5, algorithm='auto').fit(xy)
             rng = nbrs.radius_neighbors(xy)
             for i in rng[0]:
                 length += sum(i)
-        except ValueError:
+        except (ValueError, AttributeError):
             pass
         finally:
             length = length/2 + 1
