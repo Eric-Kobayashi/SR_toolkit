@@ -1,9 +1,10 @@
 SR_toolkit_v3_1
 
-Issued: 20-Dec_2018
+Issued: 20-Dec-2018
 @author: Eric Kobayashi
 
 Major changes over v3:
+
     1. Incorporate ImageJ GDSC SMLM peak fit and the brightness-based fiducial
     correction code into the analysis. Re-organise the main run_fit function
     so it workflows the ImageJ part and the python part. The ImageJ part is
@@ -22,6 +23,7 @@ Major changes over v3:
     analysis folder. This feature needs python to be run in administrator mode.
      
 Some minor changes:    
+
     1. All the analysis now are by default copied. This means no analysis files
     will be appended to the raw image folder. 
     2. Use JSON to output the logging information rather than xml. More human
@@ -29,13 +31,14 @@ Some minor changes:
     3. Fix some bugs in the library.
     
 Potential features update:
-    2. Integrate more ImageJ analysis including GDSC SMLM, background correction, 
+
+    1. Integrate more ImageJ analysis including GDSC SMLM, background correction, 
     find maxima (ThT counting), rendering SR images into the main analysis.
-    3. Doing DBSCAN on bursts (events lasting multiple frames count as one burst)
+    2. Doing DBSCAN on bursts (events lasting multiple frames count as one burst)
     rather than localisations can be more precise.
-    4. Use burst analysis for fiducial correction. (need to check papers)
-    5. Length measurement is slow. Could be improved.
-    6. Integrate sqlite to pack the outputs into database automatically. (ongoing)
+    3. Use burst analysis for fiducial correction. (need to check papers)
+    4. Length measurement is slow. Could be improved.
+    5. Integrate sqlite to pack the outputs into database automatically. (ongoing)
 
 ===============================================================================
 
@@ -47,6 +50,7 @@ First published: 03-Dec-2018
 @author: Eric Kobayashi (Based on DRW's SR_toolkit_v2)
 
 Major changes over v2:
+
     1. Pack the functions in the v2 scripts into 3 classes and their methods:
     a. Analysis class - logs the analysis parameters, collects and saves the
     outputs, with the flexibility of packing more analysis in the class.
@@ -88,6 +92,7 @@ Major changes over v2:
     or Ripley's k function could be added in the features.
     
 Some minor changes:
+
     1. Remove the generate SR_mage, ThT maxima, cropping functionality. 
     The former two are more convenient done in imageJ, the latter will be added
     in a future version, cropping either space or time.
