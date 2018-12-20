@@ -5,7 +5,7 @@ and subsequent measurements.
 '''
 
 import os
-from shutil import copyfile
+
 import pandas as pd
 import numpy as np
 import warnings
@@ -34,7 +34,7 @@ class SR_fit(object):
             
         self.path = filepath
         self.root = os.path.dirname(filepath)
-        self.base = os.path.basename(filepath)
+
         try:
             self.df = pd.read_table(filepath)       # default delimitor: space
             if len(self.df.columns) <= 2:    # if it is a comma delimitor file
@@ -53,8 +53,8 @@ class SR_fit(object):
         # Define logfile to store the analysis detail
         # self.logfile
             
-    def input_parameters(self, pixel_size=None, DBSCAN_eps=None, DBSCAN_min_samples=None, 
-                        sr_scale=8, frame_length=50, copy_analysis=False, **kwargs):
+    def input_parameters(self, results_dir, pixel_size=None, DBSCAN_eps=None, DBSCAN_min_samples=None, 
+                        sr_scale=8, frame_length=50, **kwargs):
         '''
         Initialise all the analysis parameters.
         This method is essential.
@@ -67,9 +67,7 @@ class SR_fit(object):
         self.DBSCAN_min_samples = DBSCAN_min_samples
         self.sr_scale = sr_scale
         self.frame_length = frame_length/1000
-        
-        if copy_analysis:
-            self.results_root = copy_analysis
+        self.results_root = results_dir
 
         # self.timestring = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         
@@ -79,11 +77,11 @@ class SR_fit(object):
         assert os.path.isfile(image_details), "Image metadata file not found!"
         with open(image_details, 'r') as metadata:
             metadata_content = metadata.read()
-            self.framenum = int(SR_fit._extract_htmlstyle_parser(
+            self.framenum = int(SR_fit._parse_xml(
                                 metadata_content, 'frames'))
-            self.width = int(SR_fit._extract_htmlstyle_parser(
+            self.width = int(SR_fit._parse_xml(
                                 metadata_content, 'width'))
-            self.height = int(SR_fit._extract_htmlstyle_parser(
+            self.height = int(SR_fit._parse_xml(
                                 metadata_content, 'height'))
                                 
     def cluster_info(self):
@@ -98,9 +96,9 @@ class SR_fit(object):
             # No localisations
             return
         
-        cluster_analysis_file = "DBSCAN_eps_{}_minlocs_{}.txt".format(
+        cluster_analysis_file = "DBSCAN_eps_{:.2f}nm_minlocs_{}.txt".format(
                                 self.DBSCAN_eps_nm, self.DBSCAN_min_samples)
-        cluster_analysis_file_path = os.path.join(self.root, 
+        cluster_analysis_file_path = os.path.join(self.results_root, 
                                     cluster_analysis_file)
         if os.path.isfile(cluster_analysis_file_path):
             # Cluster analysis is already done
@@ -109,10 +107,6 @@ class SR_fit(object):
             self._cluster_analysis(self.DBSCAN_eps, self.DBSCAN_min_samples)
             self.df.to_csv(cluster_analysis_file_path,
                 index=False, sep='\t')
-                
-        if hasattr(self, 'results_root'):
-            copyfile(cluster_analysis_file_path,
-                os.path.join(self.results_root, cluster_analysis_file))
             
         clustered_locs = self.df[self.df.Cluster > 0]
         self.unclustered_df = self.df[self.df.Cluster == 0]
@@ -138,36 +132,36 @@ class SR_fit(object):
         Recommend fill_gap to be set to 50, for removing blinking non-specific bindings
         Single bursts are by default removed
         '''
-        if self._isnan() or not hasattr(self, 'clusterlist'):
-            # No localisations
-            self.filtered_cluster = 0
-            return
-
-        #print('\t\tNumber of spot before filtering: {}'.format(n_spot))
-        remain_cluster = []
-        for clu in self.clusterlist:
-            clu.burst_profile(fill_gap=fill_gap, frame_length=self.frame_length)
-            if clu.burstnum >= min_burst:
-                remain_cluster.append(clu.num)
-        self.filtered_cluster = len(self.clusterlist)-len(remain_cluster)
-        
-        #print('\t\tNumber of spot after filtering: {}'.format(n_spot))
-        output_df = self.df[self.df.Cluster.isin(remain_cluster)].copy()
-        # rename all the cluster number to 1, 2, 3,...
-        cluster_dict = {v: k+1 for k, v in enumerate(remain_cluster)}
-        output_df['Cluster'] = output_df['Cluster'].map(cluster_dict)
-        self.clusterlist = [clu.update_num(cluster_dict) for 
-            clu in self.clusterlist if clu.num in remain_cluster]
-        self.df = output_df
-        # 
-        # output_df.to_csv(os.path.join(self.root,
-        # 'DBSCAN_Results_filtered_minburst_{}_fillgap_{}.txt'.format(min_burst, fill_gap)), 
-        # index = False, sep = '\t')
-        output_df.to_csv(os.path.join(self.root, 'DBSCAN_filtered.txt'),
-            index = False, sep = '\t')
-        if hasattr(self, 'results_root'):
-            copyfile(os.path.join(self.root, 'DBSCAN_filtered.txt'), 
-                os.path.join(self.results_root, 'DBSCAN_filtered.txt'))
+        with pd.option_context('mode.chained_assignment', None):
+                # Suppress the SettingwithCopyWarning 
+            
+            if self._isnan() or not hasattr(self, 'clusterlist'):
+                # No localisations
+                self.filtered_cluster = 0
+                return
+    
+            #print('\t\tNumber of spot before filtering: {}'.format(n_spot))
+            remain_cluster = []
+            for clu in self.clusterlist:
+                clu.burst_profile(fill_gap=fill_gap, frame_length=self.frame_length)
+                if clu.burstnum >= min_burst:
+                    remain_cluster.append(clu.num)
+            self.filtered_cluster = len(self.clusterlist)-len(remain_cluster)
+            
+            #print('\t\tNumber of spot after filtering: {}'.format(n_spot))
+            output_df = self.df[self.df.Cluster.isin(remain_cluster)].copy()
+            # rename all the cluster number to 1, 2, 3,...
+            cluster_dict = {v: k+1 for k, v in enumerate(remain_cluster)}
+            output_df['Cluster'] = output_df['Cluster'].map(cluster_dict)
+            self.clusterlist = [clu.update_num(cluster_dict) for 
+                clu in self.clusterlist if clu.num in remain_cluster]
+            self.df = output_df
+            # 
+            # output_df.to_csv(os.path.join(self.root,
+            # 'DBSCAN_Results_filtered_minburst_{}_fillgap_{}.txt'.format(min_burst, fill_gap)), 
+            # index = False, sep = '\t')
+            output_df.to_csv(os.path.join(self.results_root, 'DBSCAN_filtered.txt'),
+                index = False, sep = '\t')
     
     def burst_info(self, fill_gap, remove_single):
         if self._isnan() or not hasattr(self, 'clusterlist'):
@@ -256,15 +250,13 @@ class SR_fit(object):
 #Configuration <gdsc.smlm.engine.FitEngineConfiguration><fitConfiguration><fitCriteria>LEAST_SQUARED_ERROR</fitCriteria><delta>1.0E-4</delta><initialAngle>0.0</initialAngle><initialSD0>2.0</initialSD0><initialSD1>2.0</initialSD1><computeDeviations>false</computeDeviations><fitSolver>LVM</fitSolver><minIterations>0</minIterations><maxIterations>20</maxIterations><significantDigits>5</significantDigits><fitFunction>CIRCULAR</fitFunction><flags>20</flags><backgroundFitting>true</backgroundFitting><notSignalFitting>false</notSignalFitting><coordinateShift>4.0</coordinateShift><signalThreshold>1665.0</signalThreshold><signalStrength>30.0</signalStrength><minPhotons>30.0</minPhotons><precisionThreshold>625.0</precisionThreshold><precisionUsingBackground>false</precisionUsingBackground><nmPerPixel>{3}</nmPerPixel><gain>55.5</gain><emCCD>false</emCCD><modelCamera>false</modelCamera><noise>0.0</noise><widthFactor>2.0</widthFactor><fitValidation>true</fitValidation><lambda>10.0</lambda><computeResiduals>false</computeResiduals><duplicateDistance>0.5</duplicateDistance><bias>500.0</bias><readNoise>0.0</readNoise><maxFunctionEvaluations>1000</maxFunctionEvaluations><searchMethod>POWELL</searchMethod><gradientLineMinimisation>false</gradientLineMinimisation><relativeThreshold>1.0E-6</relativeThreshold><absoluteThreshold>1.0E-16</absoluteThreshold></fitConfiguration><search>3.0</search><border>1.0</border><fitting>3.0</fitting><failuresLimit>10</failuresLimit><includeNeighbours>true</includeNeighbours><neighbourHeightThreshold>0.3</neighbourHeightThreshold><residualsThreshold>1.0</residualsThreshold><noiseMethod>QUICK_RESIDUALS_LEAST_MEAN_OF_SQUARES</noiseMethod><dataFilterType>SINGLE</dataFilterType><smooth><double>0.5</double></smooth><dataFilter><gdsc.smlm.engine.DataFilter>MEAN</gdsc.smlm.engine.DataFilter></dataFilter></gdsc.smlm.engine.FitEngineConfiguration>
 #'''.format(self.path, self.width, self.height, self.pixel_size, self.frame_length)
         
-        hf = os.path.join(self.root, 'All_fits_with_header_py.txt')
+        hf = os.path.join(self.results_root, 'All_fits_with_header_py.txt')
         to_output = self.df.drop(columns=['Source', 'Cluster', 'SNR'])
         to_output.to_csv(hf, sep = '\t',  index = False)
         with open(hf, 'r+') as log:
             content = log.read()
             log.seek(0)
             log.write(header+content)
-        if hasattr(self, 'results_root'):
-            copyfile(hf, os.path.join(self.results_root, 'All_fits_with_header_py.txt'))
                 
     def loc_num(self):
         return len(self.df)
@@ -382,11 +374,9 @@ class SR_fit(object):
                     
         # save skeletonised image
         if save_image:
-            skele_image_path = os.path.join(self.root, 'skele.png')
+            skele_image_path = os.path.join(self.results_root, 'skele.png')
             imwrite(skele_image_path, second_skele.transpose())
-            if hasattr(self, 'results_root'):
-                copyfile(skele_image_path, os.path.join(self.results_root, 'skele.png'))
-            
+
     def _labelled_image(self):
         '''
         Generate scaled image with aggregates labelled with their aggregate num
@@ -405,10 +395,10 @@ class SR_fit(object):
         return labelled_image.astype('int')        
       
     @classmethod
-    def _extract_htmlstyle_parser(cls, source_string, kw):
+    def _parse_xml(cls, source_string, kw):
         '''
         Static method to extract information of the raw image from the 
-        imageJ GDSC SMLM metadata file.
+        imageJ GDSC SMLM metadata xml file.
         
         '''
         
@@ -543,7 +533,9 @@ class cluster_track(object):
         # the number of dark frame is end - begin - 1
         self.alldarklen = [frame_length*(i[1] - i[0] - 1)
                             for i in alldark if i[1] != (i[0] + 1)]          
-        self.ave_darklen = np.nanmean(self.alldarklen)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            self.ave_darklen = np.nanmean(self.alldarklen)
         # self.darknum = len(self.alldarklen)
         if self.ave_darklen != 0:
             self.lighttodark = float(self.ave_burstlen)/self.ave_darklen
