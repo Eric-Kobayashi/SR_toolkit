@@ -1,7 +1,7 @@
 '''
 SR_toolkit_v3_1
 
-Issued: 20-Dec_2018
+Issued: 20-Dec-2018
 @author: Eric Kobayashi
 
 Major changes over v3:
@@ -191,7 +191,7 @@ class Analysis(object):
         self._search_images(image_condition)
         assert self.n_img > 0, 'No image found!'
         if verbose:
-            sys.stdout.write("{} images found.\n\n".format(self.n_img))
+            sys.stdout.write("{} images found.\n".format(self.n_img))
 
         this_peak_fit_info = self._peak_fit_info(**kwargs)
         existing_peak_fit = self._existing_peak_fit()
@@ -214,13 +214,13 @@ class Analysis(object):
                 sys.stdout.write('Existing GDSC SMLM fit results found in path:\n'
                  '{}\n'.format(self.fitresults_folder)) 
 
-        self.cluster_fit(verbose=verbose, **kwargs)
-                         
+        self.cluster_fit(verbose=verbose, **kwargs)               
+        self._logging(**kwargs)    
+                             
         if kwargs['create_symlink_for_images']:
             self._create_symlinks()
         
-        self._logging(**kwargs)
-        sys.stdout.write("\nTime: {} Analysis finished!".format(
+        sys.stdout.write("\nTime: {} Analysis finished!\n\n".format(
         datetime.now().strftime('%Y-%m-%d_%H-%M-%S')))
 
     def cluster_fit(self, verbose=True, **kwargs):           
@@ -265,7 +265,7 @@ class Analysis(object):
             except SameFileError:
                 pass
             
-            fit.input_parameters(new_dir, **kwargs)
+            fit.input_parameters(results_dir=new_dir, **kwargs)
             fit_ID = 'T'+ self.timestring + '_' + fit.path # This serves as the
                         # primary key for the summary database
             fit.update_ID(fit_ID)
@@ -510,32 +510,32 @@ class OrderedDefaultDict(OrderedDict):
                                                OrderedDict.__repr__(self))
                                                
 if __name__ == '__main__':
-    directory = r"C:\Users\yz520\Desktop\OneDrive - University Of Cambridge\igorplay\training_set3"
-    image_condition = lambda img: img.endswith('_561.tif')  # Change conditions to search for imagestacks
+    directory = r"C:\Users\yz520\Desktop\OneDrive - University Of Cambridge\igorplay\cell_training_set"
+    image_condition = lambda img: img.endswith('_trimmed.tif')  # Change conditions to search for imagestacks
     input_dict = {
     # ==== Parameters for all analysis ====
-    'pixel_size': 131.5 , # nm
+    'pixel_size': 107 , # nm
     'sr_scale': 8 , # The scale used in length analysis and generation of super-res images 
     'frame_length': 50 , # ms per frame, i.e. exposure time
-    'create_symlink_for_images': True, # Needs admin mode
+    'create_symlink_for_images': False, # Needs admin mode
     
     # ==== Parameters for GDSC SMLM fitting ====
     'trim_track': {'run': True, 'frame_number': 4000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
-    'signal_strength': 40, 
+    'signal_strength': 150, 
     'precision': 20, # nm
     'min_photons': 0,
     'fiducial_correction': {'run':False, 'fid_brightness':20000},
     
     # ==== Parameters for cluster analysis and measurements ====
-    'cluster_analysis_measurement': True, # If False, only GDSC fitting will be run
+    'cluster_analysis_measurement': False, # If False, only GDSC fitting will be run
     'fitresults_file_name': 'default', # default: 'FitResults.txt' or 'FitResults_Corrected.txt' if fiducial corrected
     'DBSCAN_eps': 100 , # nm, not pixels!
     'DBSCAN_min_samples': 1 ,
-    'burst_filter': {'run':True, 'fill_gap':50, 'min_burst':2} ,  # filter out the aggregates with less than min_bursts
+    'burst_filter': {'run':True, 'fill_gap':50, 'min_burst':3} ,  # filter out the aggregates with less than min_bursts
     'burst_analysis': {'run':True, 'fill_gap':5, 'remove_single':True} ,  # analyse the burst number, burst length, dark length of the aggregates
     'length_measure': True ,
-    'eccentricity_measure': False ,
-    'convexhull_measure': False , # measure the area of the cluster
+    'eccentricity_measure': True ,
+    'convexhull_measure': True , # measure the area of the cluster
     'save_GDSC_header_file': True , # save GSDC header file for rendering, will consider remove since rendering will be incorporated in this code
     'save_histogram':True,
     

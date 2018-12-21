@@ -1,6 +1,7 @@
 from SR_toolkit_lib import Analysis
 
 '''
+SR_toolkit_v3_1
 This is the user runfile of SR_toolkit
 For technical details please refer to SR_toolkit_lib.py
 
@@ -11,24 +12,24 @@ def mainfunc():
     Input variables
     
     '''
-    directory = r"C:\Users\yz520\Desktop\OneDrive - University Of Cambridge\igorplay\training_set2"
-    image_condition = lambda img: img.endswith('_561.tif')  # Change conditions to search for imagestacks
+    directory = r"E:\Dropbox (Cambridge University)\Artemisia\Eric\SHSY5Y_Desab_imaging\Trimmed_images"
+    image_condition = lambda img: img.endswith('_trimmed.tif')  # Change conditions to search for imagestacks
     input_dict = {
     # ==== Parameters for all analysis ====
-    'pixel_size': 131.5 , # nm
+    'pixel_size': 107 , # nm
     'sr_scale': 8 , # The scale used in length analysis and generation of super-res images 
     'frame_length': 50 , # ms per frame, i.e. exposure time
     'create_symlink_for_images': True, # Needs admin mode
     
     # ==== Parameters for GDSC SMLM fitting ====
-    'trim_track': {'run': True, 'frame_number': 3900, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
-    'signal_strength': 40, 
+    'trim_track': {'run': True, 'frame_number': 4000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
+    'signal_strength': 150, 
     'precision': 30, # nm
     'min_photons': 0,
     'fiducial_correction': {'run':False, 'fid_brightness':20000},
     
     # ==== Parameters for cluster analysis and measurements ====
-    'cluster_analysis_measurement': True, # If False, only GDSC fitting will be run
+    'cluster_analysis_measurement': False, # If False, only GDSC fitting will be run
     'fitresults_file_name': 'default', # default: 'FitResults.txt' or 'FitResults_Corrected.txt' if fiducial corrected
     'DBSCAN_eps': 100 , # nm, not pixels!
     'DBSCAN_min_samples': 1 ,

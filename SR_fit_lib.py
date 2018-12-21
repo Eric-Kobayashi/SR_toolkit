@@ -53,8 +53,8 @@ class SR_fit(object):
         # Define logfile to store the analysis detail
         # self.logfile
             
-    def input_parameters(self, results_dir, pixel_size=None, DBSCAN_eps=None, DBSCAN_min_samples=None, 
-                        sr_scale=8, frame_length=50, **kwargs):
+    def input_parameters(self, results_dir=None, pixel_size=None, DBSCAN_eps=None, 
+     DBSCAN_min_samples=None, sr_scale=8, frame_length=50, **kwargs):
         '''
         Initialise all the analysis parameters.
         This method is essential.

@@ -24,7 +24,7 @@ def GDSC_SMLM(directory, file_name, results_dir, dirnum, trim_track, gdsc_smlm_x
 	pathfile = os.path.join(directory, file_name)
 	imp = IJ.openImage(pathfile)
 	if trim_track['run']: # trim the stack to the required frame number
-		imp_frame = imp.getNSlices()
+		imp_frame = max(imp.getNSlices(), imp.getNFrames())
 		if imp_frame > trim_track['frame_number']:
 			s = SubstackMaker()
 			trim_sting = "{}-{}".format(imp_frame-trim_track['frame_number']+1, imp_frame) if (trim_track['from_end']) else "{}-{}".format(1, trim_track['frame_number'])
