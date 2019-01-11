@@ -42,12 +42,13 @@ class SR_fit(object):
         except:
             self._isfit = False          # Wrong filetype
             return
-            
+        
+        self._isfit = True
+        
         if len(self.df) == 0:
             self._empty = True
             return
             
-        self._isfit = True
         self._empty = False
         
         # Define logfile to store the analysis detail
@@ -251,7 +252,7 @@ class SR_fit(object):
 #'''.format(self.path, self.width, self.height, self.pixel_size, self.frame_length)
         
         hf = os.path.join(self.results_root, 'All_fits_with_header_py.txt')
-        to_output = self.df.drop(columns=['Source', 'Cluster', 'SNR'])
+        to_output = self.df.drop(columns=['Source', 'Cluster', 'SNR'], errors='ignore')
         to_output.to_csv(hf, sep = '\t',  index = False)
         with open(hf, 'r+') as log:
             content = log.read()
