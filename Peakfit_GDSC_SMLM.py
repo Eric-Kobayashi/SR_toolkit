@@ -67,7 +67,7 @@ def cleanfi(f):
 	for _ in L: f_set.remove(_)
 	return list(f_set)
 
-def Find_fidicials(directory, fid_brightness):
+def Find_fidicials(directory, fid_brightness, fid_size):
 	to_load = os.path.join(directory, "FitResults.txt")
 	dimensions = False
 	fi = []
@@ -107,7 +107,7 @@ def Find_fidicials(directory, fid_brightness):
 		rm.reset()
 		for x, y in xylist:
 			imp.setRoi(x, y, 1, 1)
-			IJ.run(imp, "Enlarge...", "enlarge=6") 
+			IJ.run(imp, "Enlarge...", "enlarge={}".format(fid_size)) 
 			rm.addRoi(imp.getRoi())
 			imp.killRoi()
 		return True
@@ -157,6 +157,7 @@ if __name__ in ['__builtin__', '__main__']:
 	sr_scale = d['sr_scale']
 	run_fidicial_correction = d['fiducial_correction']['run']
 	fid_brightness = d['fiducial_correction']['fid_brightness']
+	fid_size = d['fiducial_correction']['fid_size']
 	
 #	with open(jsonpath, 'w') as f:
 #		json.dump(d, f, indent=2) 	# Report back the results to python
@@ -173,7 +174,7 @@ if __name__ in ['__builtin__', '__main__']:
 		else:
 			if run_fidicial_correction:
 				try:
-					flag = Find_fidicials(mydir, fid_brightness)
+					flag = Find_fidicials(mydir, fid_brightness, fid_size)
 					if flag:
 						Correct_fidicials(mydir, sr_scale)
 					else:
