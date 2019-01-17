@@ -1,7 +1,7 @@
 '''
 SR_toolkit_v3_2
 
-Issued: 20-Dec-2018
+Issued: 17-01-2019
 @author: Eric Kobayashi
 
 Changes over v3_1:
