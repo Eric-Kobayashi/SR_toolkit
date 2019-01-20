@@ -1,3 +1,18 @@
+SR_toolkit_v3_2
+Issued: 17-01-2019
+@author: Eric Kobayashi
+Changes over v3_1:
+
+    1. Add compatibility with v3_0, i.e. run cluster fit only.
+    
+    2. Add fiducial markers removal.
+    
+    3. Save fiducial marker number in the summary.
+    
+    4. Fix some bugs in the library.
+    
+=============================================================================
+    
 SR_toolkit_v3_1
 
 Issued: 20-Dec-2018
