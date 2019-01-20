@@ -1,6 +1,8 @@
 SR_toolkit_v3_2
-Issued: 17-01-2019
+
+Issued: 17-Jan-2019 
 @author: Eric Kobayashi
+
 Changes over v3_1:
 
     1. Add compatibility with v3_0, i.e. run cluster fit only.
