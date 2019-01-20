@@ -470,7 +470,8 @@ class Analysis(object):
         
         '''
         d = deepcopy(kwargs)
-        d['num_of_images'] = self.n_img
+        if kwargs['GDSC_SMLM_peak_fit']:
+            d['num_of_images'] = self.n_img
         d['num_of_fitresults'] = self.n_fit
         d['fitresults_source'] = self.fitresults_folder
         d['fitresults_name'] = self.fit_name

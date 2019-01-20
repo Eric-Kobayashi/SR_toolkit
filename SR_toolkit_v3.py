@@ -1,42 +1,45 @@
 from SR_toolkit_lib import Analysis
+import time
+
 
 '''
-SR_toolkit_v3_1
+SR_toolkit_v3_2
 This is the user runfile of SR_toolkit
 For technical details please refer to SR_toolkit_lib.py
 
 '''
 
-def mainfunc():
+def mainfunc(precision):
     '''
     Input variables
     
     '''
-    directory = r"E:\Dropbox (Cambridge University)\Artemisia\Eric\SHSY5Y_Desab_imaging\Trimmed_images"
-    image_condition = lambda img: img.endswith('_trimmed.tif')  # Change conditions to search for imagestacks
+    directory = r"E:\Dropbox (Cambridge University)\Artemisia\Eric\iPSC_in_cellulo_with_isogenic\Raw_images\axon"
+    image_condition = lambda img: img.endswith('_561.tif')  # Change conditions to search for imagestacks
     input_dict = {
     # ==== Parameters for all analysis ====
     'pixel_size': 107 , # nm
     'sr_scale': 8 , # The scale used in length analysis and generation of super-res images 
     'frame_length': 50 , # ms per frame, i.e. exposure time
-    'create_symlink_for_images': True, # Needs admin mode
+    'create_symlink_for_images': False, # Needs admin mode
     
     # ==== Parameters for GDSC SMLM fitting ====
-    'trim_track': {'run': True, 'frame_number': 4000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
-    'signal_strength': 150, 
-    'precision': 30, # nm
+    'GDSC_SMLM_peak_fit': True, # If False, the parameters for GDSC SMLM fitting will be ignored, only cluster_analysis will be run
+    'trim_track': {'run': False, 'frame_number': 4000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
+    'signal_strength': 0, 
+    'precision': 20, # nm
     'min_photons': 0,
-    'fiducial_correction': {'run':False, 'fid_brightness':20000},
+    'fiducial_correction': {'run':True, 'fid_brightness':20000, 'fid_size': 6},
     
     # ==== Parameters for cluster analysis and measurements ====
-    'cluster_analysis_measurement': False, # If False, only GDSC fitting will be run
+    'cluster_analysis_measurement': True, # If False, only GDSC fitting will be run
     'fitresults_file_name': 'default', # default: 'FitResults.txt' or 'FitResults_Corrected.txt' if fiducial corrected
     'DBSCAN_eps': 100 , # nm, not pixels!
-    'DBSCAN_min_samples': 1 ,
-    'burst_filter': {'run':True, 'fill_gap':50, 'min_burst':3} ,  # filter out the aggregates with less than min_bursts
-    'burst_analysis': {'run':True, 'fill_gap':5, 'remove_single':True} ,  # analyse the burst number, burst length, dark length of the aggregates
-    'length_measure': True ,
-    'eccentricity_measure': True ,
+    'DBSCAN_min_samples': 5 ,
+    'burst_filter': {'run':False, 'fill_gap':50, 'min_burst':3} ,  # filter out the aggregates with less than min_bursts
+    'burst_analysis': {'run':False, 'fill_gap':5, 'remove_single':True} ,  # analyse the burst number, burst length, dark length of the aggregates
+    'length_measure': False ,
+    'eccentricity_measure': False ,
     'convexhull_measure': True , # measure the area of the cluster
     'save_GDSC_header_file': True , # save GSDC header file for rendering, will consider remove since rendering will be incorporated in this code
     'save_histogram':True,
@@ -50,4 +53,4 @@ def mainfunc():
     Analysis(directory).run_fit(verbose=True, image_condition=image_condition, **input_dict)
 
 if __name__ == '__main__':
-    mainfunc()
+    time.sleep(1)
