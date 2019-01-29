@@ -8,6 +8,7 @@ import ij.plugin.frame.RoiManager as RoiManager
 import ij.plugin.ZProjector as ZProjector
 import json
 from ij.plugin import SubstackMaker
+IJ.redirectErrorMessages()
 
 def GDSC_SMLM(directory, file_name, results_dir, dirnum, trim_track, gdsc_smlm_xml, pixel_size, frame_length, signal_strength, precision, min_photons, sr_scale):
 	try:
@@ -45,7 +46,7 @@ def GDSC_SMLM(directory, file_name, results_dir, dirnum, trim_track, gdsc_smlm_x
 	sr = wm.getWindow("Image (LSE) SuperRes")
 	IJ.selectWindow("Image (LSE) SuperRes")
 	IJ.saveAs("Tiff", os.path.join(mydir, "SR_"+str(signal_strength)+"_"+str(precision)+"nm"+str(min_photons)+"photons.srf.tif"))
-	IJ.run("Scale...", "x=0.125 y=0.125 width=512 height=512 interpolation=Bilinear average create")
+	IJ.run("Scale...", "x={0} y={0} width=512 height=512 interpolation=Bilinear average create".format(1.0/sr_scale))
 	IJ.saveAs("Tiff", os.path.join(mydir, "SR_unscaled.srf.tif"))
 	wm.getCurrentWindow().close()
 	sr.close()
@@ -62,7 +63,7 @@ def cleanfi(f):
 	f_set = set(f)
 	L = []
 	for coords in f_set:
-		if f.count(coords) <= 10:
+		if f.count(coords) <= 100:  # this is a variable parameter
 			L.append(coords)
 	for _ in L: f_set.remove(_)
 	return list(f_set)
@@ -127,7 +128,7 @@ def Correct_fidicials(directory, sr_scale):
 		"plot_drift update_method=[New dataset] save_drift "+
 		"drift_file=["+os.path.join(directory, "Drift.txt")+"]")
 	except:
-		wm.getActiveWindow().close()
+		IJ.run("Close All", "")
 		return False
 	wm.getWindow("Fit Results").close()
 	IJ.run("Results Manager", "input=[Image (LSE) (Corrected)]  results_table=Uncalibrated "+
@@ -135,11 +136,7 @@ def Correct_fidicials(directory, sr_scale):
 	"image_scale="+str(sr_scale)+" image_window=0 results_file=[] results_in_memory")
 	IJ.selectWindow("Fit Results")
 	IJ.saveAs("text", os.path.join(directory, fit_name))
-	wm.getWindow("Fit Results").close()
-	wm.getWindow("Drift X").close()
-	wm.getWindow("Drift Y").close()
-	wm.getWindow("Image (LSE) SuperRes").close()
-	wm.getWindow("Image (LSE) (Corrected) SuperRes").close()
+	IJ.run("Close All", "")
 	
 if __name__ in ['__builtin__', '__main__']:
 	i = 0
