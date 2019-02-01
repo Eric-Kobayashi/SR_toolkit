@@ -1,26 +1,37 @@
 '''
-SR_toolkit_v3_2
+SR_toolkit_v3_3
 
-Issued: 17-01-2019
+Issued: 01-02-2019
 @author: Eric Kobayashi
 
-Changes over v3_1:
-    1. Add compatibility with v3_0, i.e. run cluster fit only.
-    2. Add fiducial markers removal.
-    3. Save fiducial marker number in the summary.
-    4. Fix some bugs in the library.
+Changes over v3_2:
     
-Potential features update:
-    2. Integrate more ImageJ analysis including GDSC SMLM, background correction, 
-    find maxima (ThT counting), rendering SR images into the main analysis.
-    3. Doing DBSCAN on bursts (events lasting multiple frames count as one burst)
-    rather than localisations can be more precise.
-    4. Use burst analysis for fiducial correction. (need to check papers)
-    5. Length measurement is slow. Could be improved.
+    1. Give the option of running the fiducial correction based on given fiducial coordinates.
+    
+    2. Add fiducial correction parameters (fiducial last time, smoothing parameter, limit_smoothing).
+    
+    3. Add camera bias, gain in the settings.
+    
+    4. Add labelled images for clusters.
+    
+    5. Add background calculation and variable background correction.
+    
+    6. Rendering SR images after cluster analysis.
+    
+    7. Add closing algorithm to calculate length. Instead of blurring the skeletion,
+    the holes between the localisations are filled so that no loops will appear in the skeleton. 
+    
+    8. Fix some bugs that cause error_log to malfunction.
+    
+Notice:
+    
+    Please put Rendering_SR.py in the same folder as GDSC_SMLM_peak_fit.py
+    
     
 '''
 
 import os
+import os.path as op
 from shutil import copyfile, SameFileError
 import sys
 from datetime import datetime
@@ -33,8 +44,8 @@ from copy import deepcopy
 from subprocess import call
 import warnings 
 import ctypes
+import SR_fit_lib
 
-from SR_fit_lib import SR_fit
 
 
 class Analysis(object):
@@ -46,9 +57,9 @@ class Analysis(object):
         self.path = path
         timestring = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         self.timestring = timestring
-        self.results_dir = os.path.join(path, 'Analysis_'+timestring)
+        self.results_dir = op.join(path, 'Analysis_'+timestring)
         os.mkdir(self.results_dir)
-        sys.stdout.write("Time: {} Analysis starts!\n".format(timestring))
+        sys.stdout.write("Time: {} Analysis starts!\n\n".format(timestring))
         self.json_log = OrderedDict()
         self.json_log['Time'] = timestring
         self.json_log['Path'] = path
@@ -60,8 +71,8 @@ class Analysis(object):
         '''
         
         peak_fit_para = {k: kwargs[k] for k in ['pixel_size', 'sr_scale', 
-        'frame_length', 'trim_track', 'signal_strength', 'precision', 
-        'min_photons', 'fiducial_correction']}
+        'frame_length', 'camera_bias', 'camera_gain', 'BG_measurement', 'trim_track', 
+        'signal_strength', 'precision', 'min_photons', 'fiducial_correction']}
         peak_fit_para['filelist'] = self.imglist
         return peak_fit_para
         
@@ -76,7 +87,7 @@ class Analysis(object):
                 if f == 'peak_fit_log.json':
                     List_of_peak_fit_info_file.append((roots, f))
         for json_root, json_file in List_of_peak_fit_info_file:
-            with open(os.path.join(json_root, json_file), 'r') as f:
+            with open(op.join(json_root, json_file), 'r') as f:
                 Dict_of_peak_fit_info[json_root] = json.load(f)
         return Dict_of_peak_fit_info
             
@@ -88,7 +99,7 @@ class Analysis(object):
         '''
         peak_fit_para = self._peak_fit_info(**kwargs)
         peak_fit_para['fit_name'] = fit_name
-        log_file = os.path.join(self.results_dir, 'peak_fit_log.json')
+        log_file = op.join(self.results_dir, 'peak_fit_log.json')
         with open(log_file, 'w') as f:
             json.dump(peak_fit_para, f, indent=2)
 
@@ -101,7 +112,7 @@ class Analysis(object):
             for f in files:
                 if condition(f) and not f.endswith('.srf.tif'):  
                     #.srf.tif is the SR_fit image generated in this analysis
-                    List_of_images.append(os.path.join(roots, f))
+                    List_of_images.append(op.join(roots, f))
         List_of_images.sort()
         self.imglist = List_of_images
         self.n_img = len(List_of_images)
@@ -121,13 +132,15 @@ class Analysis(object):
 
         ImageJ_path = d['ImageJ_path']
         GDSCSMLM_script_path = d['GDSCSMLM_script_path']
+        if not GDSCSMLM_script_path.endswith('.py'):
+            GDSCSMLM_script_path = op.join(GDSCSMLM_script_path, 'Peakfit_GDSC_SMLM.py')
         call([ImageJ_path, "--ij2", "--run", GDSCSMLM_script_path,
             'jsonpath="%s"' %json_file])
         
         # Read the ImageJ log output
         with open(json_file, 'r') as f:
             d = json.load(f)
-        assert 'fit_name' in d.keys(), 'Error in ImageJ script execution!'
+        assert 'fit_name' in d.keys(), 'Error in ImageJ script execution!\n'
         fit_name = d['fit_name']
         self._log_fit_info(fit_name, **kwargs)
         self.json_log['ImageJ_log'] =  d['ImageJ_log']
@@ -136,8 +149,9 @@ class Analysis(object):
                     if 'Error' in ''.join(log.values())]
         if len(error_log) > 0:
             for i, l in error_log:
-                warnings.warn("{}:\n\tError in ImageJ {} analysis, message: "
-                "{}.\n".format(i, l.keys()[0], l[0]), UserWarning)
+                for procedure, err in l.items():
+                    warnings.warn("{}:\n\tError in ImageJ {} analysis, message: {}.".format(
+                    i, procedure, err), UserWarning)
         
         return fit_name
         
@@ -145,11 +159,11 @@ class Analysis(object):
         self._search_fitresults()
         List_of_corrected = []
         for fr in self.fitpathlist:
-            file_dir = os.path.dirname(fr)
+            file_dir = op.dirname(fr)
             if 'Fiducials.txt' in os.listdir(file_dir) and \
             'FitResults_FeuRemoved.txt' not in os.listdir(file_dir):
-                fid_file = os.path.join(file_dir, 'Fiducials.txt')
-                fit_res = os.path.join(file_dir, 'FitResults_Corrected.txt')
+                fid_file = op.join(file_dir, 'Fiducials.txt')
+                fit_res = op.join(file_dir, 'FitResults_Corrected.txt')
                 List_of_corrected.append((fit_res, fid_file))
         
         for fit_res, fid_file in List_of_corrected:
@@ -161,7 +175,7 @@ class Analysis(object):
                 df = df[(df.X<feu[0]) | (df.Y<feu[1]) | (df.X>feu[2]) | (df.Y>feu[3])]
                 df = df[df.origValue<2*b]
             df = df.reset_index(drop=True)
-            df.to_csv(os.path.join(os.path.dirname(fit_res), 
+            df.to_csv(op.join(op.dirname(fit_res), 
             'FitResults_FeuRemoved.txt'), index = False, sep = '\t')
         
         self.fit_name = 'FitResults_FeuRemoved.txt'
@@ -169,7 +183,7 @@ class Analysis(object):
     def _create_symlinks(self):
         assert ctypes.windll.shell32.IsUserAnAdmin(), 'You need Admin'\
             ' permission to create symlink on Windows, try running Python as an'\
-            ' administrator.'
+            ' administrator.\n\n'
         List_of_image_path_file = []
         for roots, dirs, files in os.walk(self.results_dir):
             for f in files:
@@ -177,10 +191,29 @@ class Analysis(object):
                     List_of_image_path_file.append((roots, f))
         
         for r, f in List_of_image_path_file:
-            with open(os.path.join(r, f)) as path_f:
+            with open(op.join(r, f)) as path_f:
                 src = path_f.read()
-            link = os.path.join(r, 'Raw_image.lnk')
+            link = op.join(r, 'Raw_image.lnk')
             os.symlink(src, link)
+            
+    def _rendering(self, **kwargs):
+        d = deepcopy(kwargs)
+        ImageJ_path = d['ImageJ_path']
+        Rendering_script_path = d['GDSCSMLM_script_path']
+        json_file = d['json_file']
+        with open(json_file, 'r') as f:
+            d2 = json.load(f)
+        d2['results_dir'] = self.results_dir
+        with open(json_file, 'w') as f:
+            json.dump(d2, f, indent=2)
+
+        if not Rendering_script_path.endswith('.py'):
+            Rendering_script_path = op.join(Rendering_script_path, 'Rendering_SR.py')
+        else:
+            Rendering_script_path = op.join(op.dirname(Rendering_script_path), 'Rendering_SR.py')
+            
+        call([ImageJ_path, "--ij2", "--run", Rendering_script_path,
+            'jsonpath="%s"' %json_file])
                       
     def run_fit(self, image_condition=None, verbose=True, **kwargs):
         '''
@@ -197,9 +230,9 @@ class Analysis(object):
                 sys.stdout.write('Looking for tiff image files meeting '\
                 'defined image condition in \npath: {}...\n'.format(self.path))  
             self._search_images(image_condition)
-            assert self.n_img > 0, 'No image found!'
+            assert self.n_img > 0, 'No image found!\n\n'
             if verbose:
-                sys.stdout.write("{} images found.\n".format(self.n_img))
+                sys.stdout.write("{} images found.\n\n".format(self.n_img))
     
             this_peak_fit_info = self._peak_fit_info(**kwargs)
             existing_peak_fit = self._existing_peak_fit()
@@ -214,16 +247,16 @@ class Analysis(object):
             if not self.fitresults_folder:
                 if verbose:
                     sys.stdout.write('No existing GDSC SMLM fit results found, '
-                    'start running peak fit in ImageJ...\n') 
+                    'start running peak fit in ImageJ...\n\n') 
                 self.fit_name = self.peak_fit(**kwargs)
                 self.fitresults_folder = self.results_dir
             else:
                 if verbose:
                     sys.stdout.write('Existing GDSC SMLM fit results found in path:\n'
-                    '{}\n'.format(self.fitresults_folder)) 
+                    '{}\n\n'.format(self.fitresults_folder)) 
         else:
             if verbose:
-                sys.stdout.write('GDSC SMLM peak fit turned off.')
+                sys.stdout.write('GDSC SMLM peak fit turned off.\n\n')
             self.fit_name = 'NotApplicable'
             self.fitresults_folder = self.path
             
@@ -259,24 +292,24 @@ class Analysis(object):
                 kwargs['fiducial_correction']['fid_size'])
                 
         self._search_fitresults()
-        assert self.n_fit > 0, 'No fit results files found!'
+        assert self.n_fit > 0, 'No fit results files found!\n'
 
         if verbose:
             sys.stdout.write("Looking for super-res fit result files '{}' in \npath: {}\n".format(
                 self.fit_name, self.fitresults_folder))  
             
-        self.resultslist = [SR_fit(fitpath) for fitpath in self.fitpathlist]
+        self.resultslist = [SR_fit_lib.SR_fit(fitpath) for fitpath in self.fitpathlist]
         # OrderedDefaultDict is used here. (defined below)
         self.to_summary = OrderedDefaultDict(list) 
         self.to_hist_cluster = OrderedDefaultDict(list) 
         self.to_hist_len = OrderedDefaultDict(list) 
         self.to_hist_darklen = OrderedDefaultDict(list) 
         if verbose:
-            sys.stdout.write("{} fit results found.\n".format(self.n_fit))
-
+            sys.stdout.write("{} fit results found.\n\n".format(self.n_fit))
+        
         for fit in self.resultslist:
             new_dir = fit.root.replace(self.fitresults_folder, self.results_dir)
-            if not os.path.isdir(new_dir):
+            if not op.isdir(new_dir):
                 os.makedirs(new_dir)
                 
             if kwargs['GDSC_SMLM_peak_fit']:
@@ -286,7 +319,7 @@ class Analysis(object):
                             f_root = roots
                             break
                     try:
-                        copyfile(os.path.join(f_root, f), os.path.join(new_dir, f))
+                        copyfile(op.join(f_root, f), op.join(new_dir, f))
                     except SameFileError:
                         pass
     
@@ -297,8 +330,14 @@ class Analysis(object):
             self.to_summary['Analysis_ID'].append(fit.fit_ID)
             self.to_summary['Raw_loc_number'].append(fit.loc_num())
             self.to_summary['Frame_number'].append(fit.framenum)
+            if kwargs['BG_measurement']['run']:
+                self.to_summary['BG_level'].append(
+                 fit.output_attr_fromfile('median_intensity.txt'))
+                if kwargs['BG_measurement']['correct_precision']:
+                    self.to_summary['Corrected_precision'].append(
+                     fit.output_attr_fromfile('corrected_precision.txt'))
             if 'Fiducials.txt' in os.listdir(fit.root):
-                fid_file = os.path.join(fit.root, 'Fiducials.txt')
+                fid_file = op.join(fit.root, 'Fiducials.txt')
                 feus = pd.read_table(fid_file).values
                 self.to_summary['Fiducials_number'].append(len(feus))
             else:
@@ -383,10 +422,11 @@ class Analysis(object):
     
             if verbose:
                 sys.stdout.write("\nRun length measurement:\n")             
-                i = 1            
-            if kwargs['length_measure']:
+                i = 1     
+            paras = kwargs['length_measure'].copy()       
+            if paras.pop('run', False):
                 for fit in self.resultslist:
-                    fit.length_measure()
+                    fit.length_measure(**paras)
                     self.to_summary['Average_length_(nm)'].append(fit.ave_length)
                     self.to_summary['Average_density_1D'].append(fit.ave_density_1D)
                     
@@ -435,15 +475,26 @@ class Analysis(object):
                         sys.stdout.write("%d%%" % (i/self.n_fit*100))
                         sys.stdout.flush()
                         i += 1
-    
-            if verbose:
-                sys.stdout.write("\nSaving results...")         
-            if kwargs['save_GDSC_header_file']:
+
+            for fit in self.resultslist:
+                fit.save_with_header()
+                
+            if kwargs['Rendering_SR']:
+                if verbose:
+                    sys.stdout.write("\nRendering clustered SR images results...")    
                 for fit in self.resultslist:
-                    fit.save_with_header()
-                    
+                    fit.labelled_cluster()
+                self._rendering(**kwargs)
+                 
+            if verbose:
+                sys.stdout.write("\nSaving results...")       
             if kwargs['save_histogram']:
-                self._save_histogram()
+                df = self._save_histogram()
+                if kwargs['Rendering_SR']:
+                    for fit in self.resultslist:
+                        all_clusters_info = op.join(fit.results_root, 'all_clusters_info.csv')
+                        fit_hist = df[df['Analysis_ID'] == fit.fit_ID].copy()
+                        fit_hist.drop(columns=['Analysis_ID']).to_csv(all_clusters_info, index=False)
             
         else:
             if verbose:
@@ -460,7 +511,7 @@ class Analysis(object):
         for roots, dirs, files in os.walk(self.fitresults_folder):
             for f in files:
                 if f == self.fit_name:
-                    List_of_fitresults.append(os.path.join(roots, f))
+                    List_of_fitresults.append(op.join(roots, f))
         self.fitpathlist = List_of_fitresults
         self.n_fit = len(List_of_fitresults)
         
@@ -470,8 +521,7 @@ class Analysis(object):
         
         '''
         d = deepcopy(kwargs)
-        if kwargs['GDSC_SMLM_peak_fit']:
-            d['num_of_images'] = self.n_img
+        d['num_of_images'] = self.n_img
         d['num_of_fitresults'] = self.n_fit
         d['fitresults_source'] = self.fitresults_folder
         d['fitresults_name'] = self.fit_name
@@ -483,22 +533,25 @@ class Analysis(object):
             self.json_log['min_photons'] = 'NotApplicable'
             self.json_log['fiducial_correction'] = 'NotApplicable'
             
-        with open(os.path.join(self.results_dir, "log.json"), 'w') as log:
+        with open(op.join(self.results_dir, "log.json"), 'w') as log:
             json.dump(self.json_log, log, indent=2)
         
     def _save_summary(self):
-        DF(self.to_summary).to_csv(os.path.join(self.results_dir, 'Summary.csv'),
+        DF(self.to_summary).to_csv(op.join(self.results_dir, 'Summary.csv'),
             columns=self.to_summary.keys(), index=False)
             
     def _save_histogram(self):
-        DF(self.to_hist_cluster).to_csv(os.path.join(self.results_dir, 'Histogram_clusters.csv'),
+        df_cluster = DF(self.to_hist_cluster)
+        df_cluster.to_csv(op.join(self.results_dir, 'Histogram_clusters.csv'),
             columns=self.to_hist_cluster.keys(), index=False)
             
-        DF(self.to_hist_len).to_csv(os.path.join(self.results_dir, 'Histogram_all_burstlen.csv'),
+        DF(self.to_hist_len).to_csv(op.join(self.results_dir, 'Histogram_all_burstlen.csv'),
             columns=self.to_hist_len.keys(), index=False)
             
-        DF(self.to_hist_darklen).to_csv(os.path.join(self.results_dir, 'Histogram_all_darklen.csv'),
+        DF(self.to_hist_darklen).to_csv(op.join(self.results_dir, 'Histogram_all_darklen.csv'),
             columns=self.to_hist_darklen.keys(), index=False)
+            
+        return df_cluster
 
 class OrderedDefaultDict(OrderedDict):
     '''
@@ -549,44 +602,51 @@ class OrderedDefaultDict(OrderedDict):
                                                OrderedDict.__repr__(self))
                                                
 if __name__ == '__main__':
-    '''
-    Input variables
+    import importlib
+    importlib.reload(SR_fit_lib)
     
-    '''
-    directory = r"C:\Users\yz520\Desktop\OneDrive - University Of Cambridge\igorplay\feudicial"
+    directory = r"C:\Users\Eric\OneDrive - University Of Cambridge\igorplay\feudicial"
     image_condition = lambda img: img.endswith('_561.tif')  # Change conditions to search for imagestacks
     input_dict = {
     # ==== Parameters for all analysis ====
-    'pixel_size': 107 , # nm
+    'pixel_size': 98.6 , # nm
     'sr_scale': 8 , # The scale used in length analysis and generation of super-res images 
+    'camera_bias': 500 ,
+    'camera_gain': 55.50 ,
     'frame_length': 50 , # ms per frame, i.e. exposure time
     'create_symlink_for_images': False, # Needs admin mode
     
     # ==== Parameters for GDSC SMLM fitting ====
     'GDSC_SMLM_peak_fit': True, # If False, the parameters for GDSC SMLM fitting will be ignored, only cluster_analysis will be run
     'trim_track': {'run': False, 'frame_number': 4000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
-    'signal_strength': 0, 
+    'BG_measurement': {'run': True, 'correct_precision': True, 'kappa': 2}, # measure the background of the image_stack. (median pixel value) 
+    # if correct_precision set to True, the fitting precision will be adjusted according to the background level: higher background -> higher precision threshold. kappa controls the extent of the adjustment.
+    'signal_strength': 100, 
     'precision': 20, # nm
     'min_photons': 0,
-    'fiducial_correction': {'run':True, 'fid_brightness':20000, 'fid_size': 6},
+    'fiducial_correction': {'run':True, 'fid_file':True, 'fid_brightness':20000,
+    'fid_size': 6, 'fid_last_time':500, 'smoothing_para':0.25, 'limit_smoothing':True},
+    # fid_file enables manually defined fiducials saved in 'Fiducials.txt', 
+    # fid_brightness, fid_size, fid_last_time defines the criteria for automatically finding fiducials
+    # smoothing_para and limit_smoothing controls the correction smoothing. If smoothing fails try setting limit_smotthing to False
     
     # ==== Parameters for cluster analysis and measurements ====
-    'cluster_analysis_measurement': True, # If False, only GDSC fitting will be run
-    'fitresults_file_name': 'default', # default: 'FitResults.txt' or 'FitResults_Corrected.txt' if fiducial corrected
+    'cluster_analysis_measurement': False, # If False, only GDSC fitting will be run
+    'fitresults_file_name': 'default', # default: 'FitResults.txt' or 'FitResults_FeuRemoved.txt' if fiducial corrected
     'DBSCAN_eps': 100 , # nm, not pixels!
     'DBSCAN_min_samples': 5 ,
     'burst_filter': {'run':False, 'fill_gap':50, 'min_burst':3} ,  # filter out the aggregates with less than min_bursts
     'burst_analysis': {'run':False, 'fill_gap':5, 'remove_single':True} ,  # analyse the burst number, burst length, dark length of the aggregates
-    'length_measure': False ,
+    'length_measure': {'run':False, 'algorithm':'close', 'sigma':2}, # algorithm: blur or close; if blur, sigma is the gaussian sigma; if close, sigma is the closing square size
     'eccentricity_measure': False ,
-    'convexhull_measure': True , # measure the area of the cluster
-    'save_GDSC_header_file': True , # save GSDC header file for rendering, will consider remove since rendering will be incorporated in this code
+    'convexhull_measure': False , # measure the area of the cluster
+    'Rendering_SR': True , # rendering clustered SR images in imageJ
     'save_histogram':True,
     
     # ==== Setup the analysis, only change it when first run ====
-    'ImageJ_path': r"C:\Users\yz520\Downloads\fiji-win64-20170530\Fiji.app\ImageJ-win64.exe" ,
-    'GDSCSMLM_script_path': r"C:\Users\yz520\Desktop\OneDrive - University Of Cambridge\Data analysis package\My Library\Jython\Peakfit_GDSC_SMLM.py" ,
-    'json_file': "C://Users//yz520//to_ImageJ.json" # Needs to be // otherwise it will fail !
+    'ImageJ_path': r"C:\Users\Eric\fiji-win64\Fiji.app\ImageJ-win64.exe" ,
+    'GDSCSMLM_script_path': r"C:\Users\Eric\Documents\data analysis package\Jython" ,
+    'json_file': "C://Users//Eric//to_ImageJ.json" # Needs to be // otherwise it will fail !
     }
 
     Analysis(directory).run_fit(verbose=True, image_condition=image_condition, **input_dict)

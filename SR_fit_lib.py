@@ -5,14 +5,16 @@ and subsequent measurements.
 '''
 
 import os
-
+import os.path as op
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import warnings
+from math import ceil
 from pandas import Series
 from pandas import DataFrame as DF
 from imageio import imwrite
-from skimage.morphology import skeletonize_3d
+from skimage.morphology import skeletonize_3d, closing, square
 from scipy.ndimage.filters import gaussian_filter
 from skimage.measure import regionprops
 from sklearn.neighbors import NearestNeighbors
@@ -33,7 +35,7 @@ class SR_fit(object):
         '''    
             
         self.path = filepath
-        self.root = os.path.dirname(filepath)
+        self.root = op.dirname(filepath)
 
         try:
             self.df = pd.read_table(filepath)       # default delimitor: space
@@ -54,8 +56,9 @@ class SR_fit(object):
         # Define logfile to store the analysis detail
         # self.logfile
             
-    def input_parameters(self, results_dir=None, pixel_size=None, DBSCAN_eps=None, 
-     DBSCAN_min_samples=None, sr_scale=8, frame_length=50, **kwargs):
+    def input_parameters(self, results_dir=None, pixel_size=None, camera_gain=None,
+     camera_bias=None, DBSCAN_eps=None, DBSCAN_min_samples=None, sr_scale=8, 
+     frame_length=50, **kwargs):
         '''
         Initialise all the analysis parameters.
         This method is essential.
@@ -63,6 +66,8 @@ class SR_fit(object):
         '''
         
         self.pixel_size = pixel_size
+        self.camera_gain = camera_gain
+        self.camera_bias = camera_bias
         self.DBSCAN_eps_nm = DBSCAN_eps
         self.DBSCAN_eps = DBSCAN_eps/pixel_size
         self.DBSCAN_min_samples = DBSCAN_min_samples
@@ -74,8 +79,8 @@ class SR_fit(object):
         
         # Extract image information from image.results.xls
         image_details_file = "Image.results.xls"
-        image_details = os.path.join(self.root, image_details_file)
-        assert os.path.isfile(image_details), "Image metadata file not found!"
+        image_details = op.join(self.root, image_details_file)
+        assert op.isfile(image_details), "Image metadata file not found!"
         with open(image_details, 'r') as metadata:
             metadata_content = metadata.read()
             self.framenum = int(SR_fit._parse_xml(
@@ -99,9 +104,9 @@ class SR_fit(object):
         
         cluster_analysis_file = "DBSCAN_eps_{:.2f}nm_minlocs_{}.txt".format(
                                 self.DBSCAN_eps_nm, self.DBSCAN_min_samples)
-        cluster_analysis_file_path = os.path.join(self.results_root, 
+        cluster_analysis_file_path = op.join(self.results_root, 
                                     cluster_analysis_file)
-        if os.path.isfile(cluster_analysis_file_path):
+        if op.isfile(cluster_analysis_file_path):
             # Cluster analysis is already done
             self.df = pd.read_table(cluster_analysis_file_path)
         else:
@@ -158,10 +163,10 @@ class SR_fit(object):
                 clu in self.clusterlist if clu.num in remain_cluster]
             self.df = output_df
             # 
-            # output_df.to_csv(os.path.join(self.root,
+            # output_df.to_csv(op.join(self.root,
             # 'DBSCAN_Results_filtered_minburst_{}_fillgap_{}.txt'.format(min_burst, fill_gap)), 
             # index = False, sep = '\t')
-            output_df.to_csv(os.path.join(self.results_root, 'DBSCAN_filtered.txt'),
+            output_df.to_csv(op.join(self.results_root, 'DBSCAN_filtered.txt'),
                 index = False, sep = '\t')
     
     def burst_info(self, fill_gap, remove_single):
@@ -181,14 +186,14 @@ class SR_fit(object):
             self.ave_darklen = np.nanmean([clu.ave_darklen for clu in self.clusterlist])
             self.ave_lighttodark = np.nanmean([clu.lighttodark for clu in self.clusterlist])
         
-    def length_measure(self):
+    def length_measure(self, algorithm='blur', sigma=2):
         if self._isnan() or not hasattr(self, 'clusterlist'):
             # No localisations
             self.ave_length, self.ave_density_1D = (np.nan,)*2
             return
         
         assert hasattr(self, 'clusterlist')
-        self._skeletonise()
+        self._skeletonise(algorithm, sigma)
         for clu in self.clusterlist:
             clu.length_measure(self.pixel_size/self.sr_scale)
         with warnings.catch_warnings():
@@ -238,6 +243,12 @@ class SR_fit(object):
             
     def update_ID(self, keystring):
         self.fit_ID = keystring
+        
+    def labelled_cluster(self):
+        roi = DF([np.array(list(map(ceil, (clu.bbox()*self.sr_scale)))) 
+            for clu in self.clusterlist])
+        roi_file = op.join(self.results_root, 'clusters_roi.txt')
+        roi.to_csv(roi_file, index=False)
              
     # Output methods
     def save_with_header(self):
@@ -247,11 +258,11 @@ class SR_fit(object):
 #Name Image (LSE)
 #Source <gdsc.smlm.ij.IJImageSource><singleFrame>0</singleFrame><extraFrames>0</extraFrames><path>{0}</path></gdsc.smlm.ij.IJImageSource>
 #Bounds x0 y0 w{1} h{2}
-#Calibration <gdsc.smlm.results.Calibration><nmPerPixel>{3}</nmPerPixel><gain>55.5</gain><exposureTime>{4}</exposureTime><readNoise>0.0</readNoise><bias>500.0</bias><emCCD>false</emCCD></gdsc.smlm.results.Calibration>
-#Configuration <gdsc.smlm.engine.FitEngineConfiguration><fitConfiguration><fitCriteria>LEAST_SQUARED_ERROR</fitCriteria><delta>1.0E-4</delta><initialAngle>0.0</initialAngle><initialSD0>2.0</initialSD0><initialSD1>2.0</initialSD1><computeDeviations>false</computeDeviations><fitSolver>LVM</fitSolver><minIterations>0</minIterations><maxIterations>20</maxIterations><significantDigits>5</significantDigits><fitFunction>CIRCULAR</fitFunction><flags>20</flags><backgroundFitting>true</backgroundFitting><notSignalFitting>false</notSignalFitting><coordinateShift>4.0</coordinateShift><signalThreshold>1665.0</signalThreshold><signalStrength>30.0</signalStrength><minPhotons>30.0</minPhotons><precisionThreshold>625.0</precisionThreshold><precisionUsingBackground>false</precisionUsingBackground><nmPerPixel>{3}</nmPerPixel><gain>55.5</gain><emCCD>false</emCCD><modelCamera>false</modelCamera><noise>0.0</noise><widthFactor>2.0</widthFactor><fitValidation>true</fitValidation><lambda>10.0</lambda><computeResiduals>false</computeResiduals><duplicateDistance>0.5</duplicateDistance><bias>500.0</bias><readNoise>0.0</readNoise><maxFunctionEvaluations>1000</maxFunctionEvaluations><searchMethod>POWELL</searchMethod><gradientLineMinimisation>false</gradientLineMinimisation><relativeThreshold>1.0E-6</relativeThreshold><absoluteThreshold>1.0E-16</absoluteThreshold></fitConfiguration><search>3.0</search><border>1.0</border><fitting>3.0</fitting><failuresLimit>10</failuresLimit><includeNeighbours>true</includeNeighbours><neighbourHeightThreshold>0.3</neighbourHeightThreshold><residualsThreshold>1.0</residualsThreshold><noiseMethod>QUICK_RESIDUALS_LEAST_MEAN_OF_SQUARES</noiseMethod><dataFilterType>SINGLE</dataFilterType><smooth><double>0.5</double></smooth><dataFilter><gdsc.smlm.engine.DataFilter>MEAN</gdsc.smlm.engine.DataFilter></dataFilter></gdsc.smlm.engine.FitEngineConfiguration>
-#'''.format(self.path, self.width, self.height, self.pixel_size, self.frame_length)
+#Calibration <gdsc.smlm.results.Calibration><nmPerPixel>{3}</nmPerPixel><gain>{4}</gain><exposureTime>{5}</exposureTime><readNoise>0.0</readNoise><bias>{6}</bias><emCCD>false</emCCD></gdsc.smlm.results.Calibration>
+#Configuration <gdsc.smlm.engine.FitEngineConfiguration><fitConfiguration><fitCriteria>LEAST_SQUARED_ERROR</fitCriteria><delta>1.0E-4</delta><initialAngle>0.0</initialAngle><initialSD0>2.0</initialSD0><initialSD1>2.0</initialSD1><computeDeviations>false</computeDeviations><fitSolver>LVM</fitSolver><minIterations>0</minIterations><maxIterations>20</maxIterations><significantDigits>5</significantDigits><fitFunction>CIRCULAR</fitFunction><flags>20</flags><backgroundFitting>true</backgroundFitting><notSignalFitting>false</notSignalFitting><coordinateShift>4.0</coordinateShift><signalThreshold>1665.0</signalThreshold><signalStrength>30.0</signalStrength><minPhotons>30.0</minPhotons><precisionThreshold>625.0</precisionThreshold><precisionUsingBackground>false</precisionUsingBackground><nmPerPixel>{3}</nmPerPixel><gain>{4}</gain><emCCD>false</emCCD><modelCamera>false</modelCamera><noise>0.0</noise><widthFactor>2.0</widthFactor><fitValidation>true</fitValidation><lambda>10.0</lambda><computeResiduals>false</computeResiduals><duplicateDistance>0.5</duplicateDistance><bias>{6}</bias><readNoise>0.0</readNoise><maxFunctionEvaluations>1000</maxFunctionEvaluations><searchMethod>POWELL</searchMethod><gradientLineMinimisation>false</gradientLineMinimisation><relativeThreshold>1.0E-6</relativeThreshold><absoluteThreshold>1.0E-16</absoluteThreshold></fitConfiguration><search>3.0</search><border>1.0</border><fitting>3.0</fitting><failuresLimit>10</failuresLimit><includeNeighbours>true</includeNeighbours><neighbourHeightThreshold>0.3</neighbourHeightThreshold><residualsThreshold>1.0</residualsThreshold><noiseMethod>QUICK_RESIDUALS_LEAST_MEAN_OF_SQUARES</noiseMethod><dataFilterType>SINGLE</dataFilterType><smooth><double>0.5</double></smooth><dataFilter><gdsc.smlm.engine.DataFilter>MEAN</gdsc.smlm.engine.DataFilter></dataFilter></gdsc.smlm.engine.FitEngineConfiguration>
+#'''.format(self.path, self.width, self.height, self.pixel_size, self.camera_gain, self.frame_length, self.camera_bias)
         
-        hf = os.path.join(self.results_root, 'All_fits_with_header_py.txt')
+        hf = op.join(self.results_root, 'All_fits_with_header_py.txt')
         to_output = self.df.drop(columns=['Source', 'Cluster', 'SNR'], errors='ignore')
         to_output.to_csv(hf, sep = '\t',  index = False)
         with open(hf, 'r+') as log:
@@ -294,6 +305,15 @@ class SR_fit(object):
                 List_of_attr += attrlist
                 List_of_clusternum += [clu.num]*len(attrlist)
         return List_of_clusternum, List_of_attr
+        
+    def output_attr_fromfile(self, attrfile):
+        attrpath = op.join(self.root, attrfile)
+        if not op.isfile(attrpath):
+            return np.nan
+        else:
+            with open(attrpath, 'r') as f:
+                attr = float(f.read())
+            return attr
         
     # Private methods
     def _isnan(self):
@@ -339,7 +359,7 @@ class SR_fit(object):
         if not hasattr(self, 'props'):
             self.props = regionprops(self._labelled_image(), coordinates='xy')
             
-    def _skeletonise(self, save_image=True):
+    def _skeletonise(self, algorithm, sigma):
         '''
         Skeletonise the fibrils to one-dimensional shape
         Save the results in cluster_track.skele
@@ -357,11 +377,13 @@ class SR_fit(object):
                 pos = tuple(xy)
                 binary_image[pos] = 1
                 cluster_labels[pos] = clu.num
-        
-        gauss_sigma = 2
-        first_skele = skeletonize_3d(binary_image)*100 # Used for gaussian smoothing
-        skele_blurred = gaussian_filter(first_skele, gauss_sigma).astype(bool)
-        second_skele = skeletonize_3d(skele_blurred)
+        if algorithm == 'close':
+            closed = closing(binary_image, square(int(sigma*self.sr_scale)))
+            second_skele = skeletonize_3d(closed)
+        else:
+            first_skele = skeletonize_3d(binary_image)*100 # Used for gaussian smoothing
+            skele_blurred = gaussian_filter(first_skele, sigma).astype(bool)
+            second_skele = skeletonize_3d(skele_blurred)
         
         # Assign the cluster number back to the skeletonised image
         cluster_dict = self._cluster_dict()
@@ -374,8 +396,12 @@ class SR_fit(object):
                     break
                     
         # save skeletonised image
-        if save_image:
-            skele_image_path = os.path.join(self.results_root, 'skele.png')
+        skele_image_path = op.join(self.results_root, 'skele.png')
+        closed_image_path = op.join(self.results_root, 'closed.png')
+        if algorithm == 'close':
+            imwrite(skele_image_path, (second_skele*255).transpose())
+            imwrite(closed_image_path, (closed*255).transpose())
+        else:
             imwrite(skele_image_path, second_skele.transpose())
 
     def _labelled_image(self):
@@ -441,6 +467,11 @@ class cluster_track(object):
         self.loc_num = len(df)
         self.frames = np.array(df.Frame)
         self.frames.sort()        # sort the frame numbers
+    
+    def bbox(self):
+        a = self.df[['X','Y']]
+        box = np.min(a['X']), np.min(a['Y']), np.max(a['X'])-np.min(a['X']), np.max(a['Y'])-np.min(a['Y'])
+        return np.array(box)
         
     def update_num(self, update_dict):
         self.num = update_dict[self.num]
@@ -564,4 +595,35 @@ class cluster_track(object):
         finally:
             length = length/2 + 1
         self.nm_length = length*scale
+
+#     def intensity_profile(self, max_frame):
+#         multidots = {}
+#         for f, g in [(_, g) for _, g in self.intensityprofile.groupby('Frame') if len(g) > 1]:
+#             multidots[f] = g['origValue'].mean()
+#         to_graph = self.intensityprofile[self.intensityprofile.Frame.map(lambda x: x not in multidots.keys())].copy()
+#         for keys, values in multidots.items():
+#             to_graph.append({'Frame':keys, 'origValue':values}, ignore_index=True)
+#         for f in range(max_frame + 1):
+#             if f not in to_graph.Frame.values:
+#                 to_graph = to_graph.append({'Frame':f, 'origValue':0}, ignore_index=True)
+#         to_graph.sort_values(by='Frame', inplace=True)
+#         
+#         temp = 0
+#         filldict = {}
+#         for index, row in to_graph.iterrows():
+#             if row['origValue'] != -1:
+#                 temp = row['origValue']
+#             else:
+#                 filldict[row['Frame']] = temp
+#         to_graph_fill = to_graph[to_graph.Frame.map(lambda x: x not in filldict.keys())].copy()
+#         for keys, values in filldict.items():
+#             to_graph_fill = to_graph_fill.append({'Frame':keys, 'origValue':values}, ignore_index=True)
+#         to_graph_fill.sort_values(by='Frame', inplace=True)
+#         to_graph_fill.plot(x='Frame', y='origValue', kind='line', linewidth=1, color='r', figsize=(30,10))
+#         plt.title('Trace at x={}, y={}'.format(int(self.X), int(self.Y)))
+#         # to_graph.to_csv(os.path.join(savepath, 'fill_gap_raw.csv'), index=False)
+#         # plt.savefig(os.path.join(savepath, 'fill_gap.pdf'), format='pdf')
+#         plt.close()
+# 
+#         return to_graph, to_graph_fill
         
