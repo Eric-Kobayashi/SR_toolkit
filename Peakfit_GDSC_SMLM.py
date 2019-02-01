@@ -13,7 +13,7 @@ import json
 from ij.plugin import SubstackMaker
 IJ.redirectErrorMessages()
 
-def GDSC_SMLM(directory, file_name, mydir, trim_track, gdsc_smlm_xml, pixel_size, camera_gain, camera_bias, frame_length, signal_strength, precision, min_photons, sr_scale):
+def GDSC_SMLM(directory, file_name, mydir, trim_track, bg_measurement, gdsc_smlm_xml, pixel_size, camera_gain, camera_bias, frame_length, signal_strength, precision, min_photons, sr_scale):
 	try:
 		wm.getWindow("Fit Results").close()	# clean the previous fit results
 	except:
@@ -29,6 +29,13 @@ def GDSC_SMLM(directory, file_name, mydir, trim_track, gdsc_smlm_xml, pixel_size
 			s = SubstackMaker()
 			trim_sting = "{}-{}".format(imp_frame-trim_track['frame_number']+1, imp_frame) if (trim_track['from_end']) else "{}-{}".format(1, trim_track['frame_number'])
 			imp = s.makeSubstack(imp, trim_sting)
+	if bg_measurement['run'] and not bg_measurement['correct_precision']:
+		IJ.run(imp, "Hyperstack to Stack", "")
+		ave_imp = ZProjector.run(imp, "avg")
+		stats = ave_imp.getStatistics(0x10000)
+		with open(op.join(mydir, "median_intensity.txt"), 'w') as f:
+			f.write(str(stats.median))
+
 	imp.setTitle("Image")
 	imp.show()
 	IJ.run(imp, "Peak Fit", "template=[None] config_file=["+gdsc_smlm_xml+"] calibration="+str(pixel_size)+
@@ -186,10 +193,19 @@ def Correct_fidicials(directory, sr_scale, smoothing_para, limit_smoothing):
 	IJ.saveAs("text", op.join(directory, fit_name))
 	IJ.run("Close All", "")
 
-def create_image_pixel_median(img, savedir): 
+def create_image_pixel_median(img, savedir, trim_track): 
 	imp = IJ.openVirtual(img)
 	IJ.run(imp, "Hyperstack to Stack", "")
-	ave_imp = ZProjector.run(imp, "avg")
+	if trim_track['run']: # trim the stack to the required frame number
+		imp_frame = max(imp.getNSlices(), imp.getNFrames())
+		if imp_frame > trim_track['frame_number']:
+			if trim_track['from_end']:
+				start = imp_frame-trim_track['frame_number']+1
+				end = imp_frame
+			else:
+				start = 1
+				end = trim_track['frame_number']
+	ave_imp = ZProjector.run(imp, "avg", start, end)
 	stats = ave_imp.getStatistics(0x10000)
 	IJ.run("Close All", "")
 	with open(op.join(savedir, "median_intensity.txt"), 'w') as f:
@@ -247,30 +263,29 @@ if __name__ in ['__builtin__', '__main__']:
 		List_of_mydir.append((img, mydir))
 		i += 1
 
-	if bg_measurement['run']:
+	if bg_measurement['run'] and bg_measurement['correct_precision']:
 		bg_dict = {}
 		for img, mydir in List_of_mydir:
 			bg_dict[img] = create_image_pixel_median(img, mydir)
-		if bg_measurement['correct_precision']:
-			kappa = bg_measurement['kappa']
-			med_intensity = getMedian(bg_dict.values())
-			pre_dict = {}
-			for img, mydir in List_of_mydir:
-				intensity = bg_dict[img]
-				img_pre = math.exp(kappa*(intensity/med_intensity-1))*precision
-				pre_dict[img] = img_pre
-				with open(op.join(mydir, "corrected_precision.txt"), 'w') as f:
-					f.write(str(img_pre))
+		kappa = bg_measurement['kappa']
+		med_intensity = getMedian(bg_dict.values())
+		pre_dict = {}
+		for img, mydir in List_of_mydir:
+			intensity = bg_dict[img]
+			img_pre = math.exp(kappa*(intensity/med_intensity-1))*precision
+			pre_dict[img] = img_pre
+			with open(op.join(mydir, "corrected_precision.txt"), 'w') as f:
+				f.write(str(img_pre))
 					
 	for img, mydir in List_of_mydir:
 		r = op.dirname(img)
 		f = op.basename(img)
-		if bg_measurement['correct_precision']:
+		if bg_measurement['run'] and bg_measurement['correct_precision']:
 			corrected_precision = pre_dict[img]
 		else:
 			corrected_precision = precision
 		try:
-			w, h = GDSC_SMLM(r, f, mydir, trim_track, gdsc_smlm_xml, pixel_size, camera_gain, camera_bias, frame_length, signal_strength, corrected_precision, min_photons, sr_scale)
+			w, h = GDSC_SMLM(r, f, mydir, trim_track, bg_measurement, gdsc_smlm_xml, pixel_size, camera_gain, camera_bias, frame_length, signal_strength, corrected_precision, min_photons, sr_scale)
 		except Exception as e:
 			log_dict[img] = {}
 			log_dict[img]['GDSC_SMLM'] = 'Error: {}'.format(e) # GDSC_SMLM peakfit failed
