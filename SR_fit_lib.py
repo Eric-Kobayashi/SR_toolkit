@@ -322,7 +322,7 @@ class SR_fit(object):
         
     # Private methods
     def _isnan(self):
-        if not self._isfit or self._empty or hasattr(self, 'clusterlist'):
+        if not self._isfit or self._empty or not hasattr(self, 'clusterlist'):
             return True
         elif len(self.clusterlist) == 0:
             return True
