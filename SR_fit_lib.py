@@ -141,7 +141,7 @@ class SR_fit(object):
         with pd.option_context('mode.chained_assignment', None):
                 # Suppress the SettingwithCopyWarning 
             
-            if self._isnan() or not hasattr(self, 'clusterlist'):
+            if self._isnan():
                 # No localisations
                 self.filtered_cluster = 0
                 return
@@ -170,7 +170,7 @@ class SR_fit(object):
                 index = False, sep = '\t')
     
     def burst_info(self, fill_gap, remove_single):
-        if self._isnan() or not hasattr(self, 'clusterlist'):
+        if self._isnan():
             # No localisations
             self.ave_burstlen, self.ave_burstnum, \
                 self.ave_darklen, self.ave_lighttodark = (np.nan,)*4
@@ -187,15 +187,17 @@ class SR_fit(object):
             self.ave_lighttodark = np.nanmean([clu.lighttodark for clu in self.clusterlist])
         
     def length_measure(self, algorithm='blur', sigma=2):
-        if self._isnan() or not hasattr(self, 'clusterlist'):
+        if self._isnan():
             # No localisations
             self.ave_length, self.ave_density_1D = (np.nan,)*2
             return
-        
-        assert hasattr(self, 'clusterlist')
-        self._skeletonise(algorithm, sigma)
-        for clu in self.clusterlist:
-            clu.length_measure(self.pixel_size/self.sr_scale)
+            
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=FutureWarning)
+            self._skeletonise(algorithm, sigma)
+            for clu in self.clusterlist:
+                clu.length_measure(self.pixel_size/self.sr_scale)
+                
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             self.ave_length = np.nanmean([clu.nm_length for clu in self.clusterlist])
@@ -203,12 +205,11 @@ class SR_fit(object):
                                             clu in self.clusterlist])
                                  
     def eccentricity_measure(self):
-        if self._isnan() or not hasattr(self, 'clusterlist'):
+        if self._isnan():
             # No localisations
             self.ave_ecc, self.ave_flattening = (np.nan,)*2
             return
-        
-        assert hasattr(self, 'clusterlist')
+
         self._regionprops()
         for clu in self.clusterlist:
             setattr(clu, 'ecc', self.props[clu.num-1]['eccentricity'])
@@ -226,7 +227,7 @@ class SR_fit(object):
         
         '''
         
-        if self._isnan() or not hasattr(self, 'clusterlist'):
+        if self._isnan():
             # No localisations
             self.ave_area, self.ave_density_2D = (np.nan,)*2
             return
@@ -252,7 +253,7 @@ class SR_fit(object):
              
     # Output methods
     def save_with_header(self):
-        if self._isnan() or not hasattr(self, 'clusterlist'):
+        if self._isnan():
             # No localisations
             return
 
@@ -323,6 +324,10 @@ class SR_fit(object):
     def _isnan(self):
         if self._isfit and not self._empty:
             return False
+        elif not hasattr(self, 'clusterlist'):
+            return False
+        elif len(self.clusterlist) == 0:
+            return False
         else:
             return True
 
@@ -349,8 +354,10 @@ class SR_fit(object):
         Create a cluster number -> cluster_track object dictionary.
         
         '''
-        
-        assert hasattr(self, 'clusterlist')
+        if self._isnan():
+            # No localisations
+            return {}
+            
         return {clu.num: clu for clu in self.clusterlist}
                 
     def _regionprops(self):
