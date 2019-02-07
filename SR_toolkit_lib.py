@@ -493,7 +493,10 @@ class Analysis(object):
                 if kwargs['Rendering_SR']:
                     for fit in self.resultslist:
                         all_clusters_info = op.join(fit.results_root, 'all_clusters_info.csv')
-                        fit_hist = df[df['Analysis_ID'] == fit.fit_ID].copy()
+                        try:
+                            fit_hist = df[df['Analysis_ID'] == fit.fit_ID].copy()
+                        except TypeError:
+                            continue
                         fit_hist.drop(columns=['Analysis_ID']).to_csv(all_clusters_info, index=False)
             
         else:

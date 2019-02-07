@@ -252,6 +252,10 @@ class SR_fit(object):
              
     # Output methods
     def save_with_header(self):
+        if self._isnan() or not hasattr(self, 'clusterlist'):
+            # No localisations
+            return
+
         header = '''#Localisation Results File
 #FileVersion Text.D0.E0.V2
 
