@@ -322,14 +322,12 @@ class SR_fit(object):
         
     # Private methods
     def _isnan(self):
-        if self._isfit and not self._empty:
-            return False
-        elif not hasattr(self, 'clusterlist'):
-            return False
-        elif len(self.clusterlist) == 0:
-            return False
-        else:
+        if not self._isfit or self._empty or hasattr(self, 'clusterlist'):
             return True
+        elif len(self.clusterlist) == 0:
+            return True
+        else:
+            return False
 
             
     def _cluster_analysis(self, epsilon, min_samples):
