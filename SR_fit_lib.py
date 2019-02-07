@@ -246,6 +246,10 @@ class SR_fit(object):
         self.fit_ID = keystring
         
     def labelled_cluster(self):
+        if self._isnan():
+            # No localisations
+            return
+
         roi = DF([np.array(list(map(ceil, (clu.bbox()*self.sr_scale)))) 
             for clu in self.clusterlist])
         roi_file = op.join(self.results_root, 'clusters_roi.txt')
