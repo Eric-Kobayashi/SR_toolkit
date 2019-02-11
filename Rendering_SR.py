@@ -49,9 +49,9 @@ if __name__ in ['__builtin__', '__main__']:
 					
 		rm.runCommand("Save", op.join(r, "roiset.zip"))
 		rm.runCommand(sr, "Show All with labels")
-		IJ.saveAs(sr, "Tiff", op.join(r, "Rendered_SR_labelled.tif"))
+		IJ.saveAs(sr, "Tiff", op.join(r, "Rendered_SR_labelled.srf.tif"))
 		rm.reset()
-		IJ.saveAs(sr, "Tiff", op.join(r, "Rendered_SR.tif"))
+		IJ.saveAs(sr, "Tiff", op.join(r, "Rendered_SR.srf.tif"))
 		sr.close()
 
 	IJ.run("Quit")

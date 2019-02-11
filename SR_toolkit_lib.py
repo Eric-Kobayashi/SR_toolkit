@@ -524,10 +524,26 @@ class Analysis(object):
         
         '''
         d = deepcopy(kwargs)
-        d['num_of_images'] = self.n_img
-        d['num_of_fitresults'] = self.n_fit
-        d['fitresults_source'] = self.fitresults_folder
-        d['fitresults_name'] = self.fit_name
+        try:
+            d['num_of_images'] = self.n_img
+        except:
+            d['num_of_images'] = np.nan
+            
+        try:
+            d['num_of_fitresults'] = self.n_fit
+        except:
+            d['num_of_fitresults'] = np.nan
+            
+        try:
+            d['fitresults_source'] = self.fitresults_folder
+        except:
+            d['fitresults_source'] = np.nan
+            
+        try:
+            d['fitresults_name'] = self.fit_name
+        except:
+            d['fitresults_name'] = np.nan
+            
         self.json_log.update(d)
         if not kwargs['GDSC_SMLM_peak_fit']:
             self.json_log['trim_track'] = 'NotApplicable'
