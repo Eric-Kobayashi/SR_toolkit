@@ -1,34 +1,3 @@
-SR_toolkit_v3_3
-
-Issued: 01-Feb-2019
-@author: Eric Kobayashi
-
-Changes over v3_2:
-    
-    1. Give the option of running the fiducial correction based on given fiducial coordinates.
-    
-    2. Add fiducial correction parameters (fiducial last time, smoothing parameter, limit_smoothing).
-    
-    3. Add camera bias, gain in the settings.
-    
-    4. Add labelled images for clusters.
-    
-    5. Add background calculation and variable background correction.
-    
-    6. Rendering SR images after cluster analysis.
-    
-    7. Add closing algorithm to calculate length. Instead of blurring the skeletion,
-    the holes between the localisations are filled so that no loops will appear in the skeleton. 
-    
-    8. Fix some bugs that cause error_log to malfunction.
-    
-Notice:
-    
-    Please put Rendering_SR.py in the same folder as GDSC_SMLM_peak_fit.py
-
-
-=============================================================================
-
 SR_toolkit_v3_2
 
 Issued: 17-Jan-2019 
