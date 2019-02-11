@@ -98,7 +98,7 @@ class SR_fit(object):
         
         '''
         
-        if self._isnan():
+        if not self._isfit or self._empty:
             # No localisations
             return
         
@@ -340,12 +340,7 @@ class SR_fit(object):
         This method is only called inside the class because it is essential 
         to all the following analysis.
         
-        '''
-        
-        if self._isnan():
-            # No localisations
-            return
-        
+        '''       
         fit_xy = self.df[['X', 'Y']].values
         db = DBSCAN(eps=epsilon, min_samples=min_samples).fit(fit_xy)
         self.df['Cluster'] = db.labels_ + 1  # Start labelling with 1, makes analysis easier
