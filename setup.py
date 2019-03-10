@@ -2,7 +2,7 @@ import os
 import os.path as op
 import shutil as sh
 import json
-import site
+from subprocess import call
 
 if __name__ == '__main__':
     # Here is where the script folder will be
@@ -17,7 +17,8 @@ if __name__ == '__main__':
         sh.rmtree(setup_path)
     script_path = os.path.dirname(os.path.abspath(__file__))
     sh.copytree(op.join(script_path, 'SR_toolkit'), setup_path)
-    site.addsitedir(setup_path)
+    if setup_path not in os.getenv('PYTHONPATH'):
+        call('setx PYTHONPATH "{}"'.format(setup_path))
     
     config_file = {}
     config_file['json_file'] = op.join(setup_path, 'to_ImageJ.json').replace('\\','//')
