@@ -4,11 +4,9 @@ and subsequent measurements.
 
 '''
 
-import os
 import os.path as op
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import warnings
 from math import ceil
 from pandas import Series
@@ -58,7 +56,7 @@ class SR_fit(object):
             
     def input_parameters(self, results_dir=None, pixel_size=None, camera_gain=None,
      camera_bias=None, DBSCAN_eps=None, DBSCAN_min_samples=None, sr_scale=8, 
-     frame_length=50, **kwargs):
+     frame_length=50, GDSC_SMLM_version=1, **kwargs):
         '''
         Initialise all the analysis parameters.
         This method is essential.
@@ -74,6 +72,7 @@ class SR_fit(object):
         self.sr_scale = sr_scale
         self.frame_length = frame_length/1000
         self.results_root = results_dir
+        self.version = GDSC_SMLM_version
 
         # self.timestring = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         
@@ -89,6 +88,7 @@ class SR_fit(object):
                                 metadata_content, 'width'))
             self.height = int(SR_fit._parse_xml(
                                 metadata_content, 'height'))
+            self.header = metadata_content.split('#Frame')[0]
                                 
     def cluster_info(self):
         '''
@@ -256,28 +256,21 @@ class SR_fit(object):
         roi.to_csv(roi_file, index=False)
              
     # Output methods
-    def save_with_header(self):
+    def save_with_header(self, **kwargs):
         if self._isnan():
             # No localisations
             return
 
-        header = '''#Localisation Results File
-#FileVersion Text.D0.E0.V2
-
-#Name Image (LSE)
-#Source <gdsc.smlm.ij.IJImageSource><singleFrame>0</singleFrame><extraFrames>0</extraFrames><path>{0}</path></gdsc.smlm.ij.IJImageSource>
-#Bounds x0 y0 w{1} h{2}
-#Calibration <gdsc.smlm.results.Calibration><nmPerPixel>{3}</nmPerPixel><gain>{4}</gain><exposureTime>{5}</exposureTime><readNoise>0.0</readNoise><bias>{6}</bias><emCCD>false</emCCD></gdsc.smlm.results.Calibration>
-#Configuration <gdsc.smlm.engine.FitEngineConfiguration><fitConfiguration><fitCriteria>LEAST_SQUARED_ERROR</fitCriteria><delta>1.0E-4</delta><initialAngle>0.0</initialAngle><initialSD0>2.0</initialSD0><initialSD1>2.0</initialSD1><computeDeviations>false</computeDeviations><fitSolver>LVM</fitSolver><minIterations>0</minIterations><maxIterations>20</maxIterations><significantDigits>5</significantDigits><fitFunction>CIRCULAR</fitFunction><flags>20</flags><backgroundFitting>true</backgroundFitting><notSignalFitting>false</notSignalFitting><coordinateShift>4.0</coordinateShift><signalThreshold>1665.0</signalThreshold><signalStrength>30.0</signalStrength><minPhotons>30.0</minPhotons><precisionThreshold>625.0</precisionThreshold><precisionUsingBackground>false</precisionUsingBackground><nmPerPixel>{3}</nmPerPixel><gain>{4}</gain><emCCD>false</emCCD><modelCamera>false</modelCamera><noise>0.0</noise><widthFactor>2.0</widthFactor><fitValidation>true</fitValidation><lambda>10.0</lambda><computeResiduals>false</computeResiduals><duplicateDistance>0.5</duplicateDistance><bias>{6}</bias><readNoise>0.0</readNoise><maxFunctionEvaluations>1000</maxFunctionEvaluations><searchMethod>POWELL</searchMethod><gradientLineMinimisation>false</gradientLineMinimisation><relativeThreshold>1.0E-6</relativeThreshold><absoluteThreshold>1.0E-16</absoluteThreshold></fitConfiguration><search>3.0</search><border>1.0</border><fitting>3.0</fitting><failuresLimit>10</failuresLimit><includeNeighbours>true</includeNeighbours><neighbourHeightThreshold>0.3</neighbourHeightThreshold><residualsThreshold>1.0</residualsThreshold><noiseMethod>QUICK_RESIDUALS_LEAST_MEAN_OF_SQUARES</noiseMethod><dataFilterType>SINGLE</dataFilterType><smooth><double>0.5</double></smooth><dataFilter><gdsc.smlm.engine.DataFilter>MEAN</gdsc.smlm.engine.DataFilter></dataFilter></gdsc.smlm.engine.FitEngineConfiguration>
-#'''.format(self.path, self.width, self.height, self.pixel_size, self.camera_gain, self.frame_length, self.camera_bias)
-        
         hf = op.join(self.results_root, 'All_fits_with_header_py.txt')
-        to_output = self.df.drop(columns=['Source', 'Cluster', 'SNR'], errors='ignore')
+        to_output = self.df.drop(columns=['Source', 'Cluster', 'SNR', 'Precision (nm)'], errors='ignore')
+        if self.version == 2:
+            to_output = to_output.rename(columns={"T": "Frame"})
+            to_output['Z (px)'] = 0
         to_output.to_csv(hf, sep = '\t',  index = False)
         with open(hf, 'r+') as log:
             content = log.read()
             log.seek(0)
-            log.write(header+content)
+            log.write(self.header + '#' + content)
                 
     def loc_num(self):
         return len(self.df)
@@ -340,8 +333,11 @@ class SR_fit(object):
         This method is only called inside the class because it is essential 
         to all the following analysis.
         
-        '''       
-        fit_xy = self.df[['X', 'Y']].values
+        '''        
+        if self.version == 1:
+            fit_xy = self.df[['X', 'Y']].values
+        else:
+            fit_xy = self.df[['X (px)', 'Y (px)']].values
         db = DBSCAN(eps=epsilon, min_samples=min_samples).fit(fit_xy)
         self.df['Cluster'] = db.labels_ + 1  # Start labelling with 1, makes analysis easier
 
@@ -473,12 +469,23 @@ class cluster_track(object):
         self.num = num
         self.df = df
         self.loc_num = len(df)
-        self.frames = np.array(df.Frame)
+        try:
+            self.frames = np.array(df.Frame)
+        except:
+            self.frames = np.array(df['T'])
         self.frames.sort()        # sort the frame numbers
     
     def bbox(self):
-        a = self.df[['X','Y']]
-        box = np.min(a['X']), np.min(a['Y']), np.max(a['X'])-np.min(a['X']), np.max(a['Y'])-np.min(a['Y'])
+        try:
+            a = self.df[['X','Y']]
+            box = np.min(a['X']), np.min(a['Y']), \
+             np.max(a['X'])-np.min(a['X']), \
+             np.max(a['Y'])-np.min(a['Y'])
+        except:
+            a = self.df[['X (px)','Y (px)']]
+            box = np.min(a['X (px)']), np.min(a['Y (px)']), \
+            np.max(a['X (px)'])-np.min(a['X (px)']), \
+            np.max(a['Y (px)'])-np.min(a['Y (px)'])
         return np.array(box)
         
     def update_num(self, update_dict):
@@ -491,11 +498,18 @@ class cluster_track(object):
         
         '''
         if not hasattr(self, 'skele'):
-            self.skele = DF(columns=['X','Y'])
+            try:
+                self.skele = DF(columns=['X','Y'])
+            except:
+                self.skele = DF(columns=['X (px)','Y (px)'])
         self.skele = self.skele.append({'X':skele_xy[0], 'Y':skele_xy[1]}, ignore_index=True)
         
     def xy_coordinates(self):
-        return self.df[['X','Y']].values
+        try:
+            v = self.df[['X','Y']].values
+        except:
+            v = self.df[['X (px)','Y (px)']].values
+        return v
   
     def burst_profile(self, fill_gap, frame_length, remove_single = True):
         '''

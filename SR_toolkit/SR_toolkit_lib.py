@@ -1,32 +1,19 @@
 '''
-SR_toolkit_v3_3
+SR_toolkit_v3_4
 
-Issued: 01-02-2019
+Issued: 10-03-2019
 @author: Eric Kobayashi
 
-Changes over v3_2:
+Changes over v3_3:
     
-    1. Give the option of running the fiducial correction based on given fiducial coordinates.
+    1. Add support of GDSC SMLM 2, although the package is still an unstable release,
+    it gives the difference Gaussian filter which could be useful. The other parameters
+    have not yet been included in SR_toolkit however if any of them is significant it 
+    will be added in a future version.
     
-    2. Add fiducial correction parameters (fiducial last time, smoothing parameter, limit_smoothing).
+    2. Add setup file for easy installation.
     
-    3. Add camera bias, gain in the settings.
-    
-    4. Add labelled images for clusters.
-    
-    5. Add background calculation and variable background correction.
-    
-    6. Rendering SR images after cluster analysis.
-    
-    7. Add closing algorithm to calculate length. Instead of blurring the skeletion,
-    the holes between the localisations are filled so that no loops will appear in the skeleton. 
-    
-    8. Fix some bugs that cause error_log to malfunction.
-    
-Notice:
-    
-    Please put Rendering_SR.py in the same folder as GDSC_SMLM_peak_fit.py
-    
+    3. Simplify the code of generating fit header file.    
     
 '''
 
@@ -46,8 +33,6 @@ import warnings
 import ctypes
 import SR_fit_lib
 
-
-
 class Analysis(object):
     '''
     This class is used to package the analysis together.
@@ -63,6 +48,9 @@ class Analysis(object):
         self.json_log = OrderedDict()
         self.json_log['Time'] = timestring
         self.json_log['Path'] = path
+        current_path = op.dirname(op.abspath(__file__))
+        with open(op.join(current_path, 'config.txt'), 'r') as f:
+            self.config_d = json.load(f)
         
     def _peak_fit_info(self, **kwargs):
         '''
@@ -72,7 +60,8 @@ class Analysis(object):
         
         peak_fit_para = {k: kwargs[k] for k in ['pixel_size', 'sr_scale', 
         'frame_length', 'camera_bias', 'camera_gain', 'BG_measurement', 'trim_track', 
-        'signal_strength', 'precision', 'min_photons', 'fiducial_correction']}
+        'signal_strength', 'precision', 'min_photons', 'fiducial_correction',
+        'GDSC_SMLM_version', 'spot_filter']}
         peak_fit_para['filelist'] = self.imglist
         return peak_fit_para
         
@@ -126,14 +115,16 @@ class Analysis(object):
         d = deepcopy(kwargs)
         d['filelist'] = self.imglist
         d['results_dir'] = self.results_dir
-        json_file = d['json_file']
+        json_file = self.config_d['json_file']
         with open(json_file, 'w') as f:
             json.dump(d, f, indent=2)
-
-        ImageJ_path = d['ImageJ_path']
-        GDSCSMLM_script_path = d['GDSCSMLM_script_path']
-        if not GDSCSMLM_script_path.endswith('.py'):
-            GDSCSMLM_script_path = op.join(GDSCSMLM_script_path, 'Peakfit_GDSC_SMLM.py')
+        if d['GDSC_SMLM_version'] == 1:
+            ImageJ_path = self.config_d['imageJ_GDSCSMLM1_path']
+            GDSCSMLM_script_path = self.config_d['GDSCSMLM1_script_path']
+        else:
+            ImageJ_path = self.config_d['imageJ_GDSCSMLM2_path']
+            GDSCSMLM_script_path = self.config_d['GDSCSMLM2_script_path']
+        
         call([ImageJ_path, "--ij2", "--run", GDSCSMLM_script_path,
             'jsonpath="%s"' %json_file])
         
@@ -155,7 +146,11 @@ class Analysis(object):
         
         return fit_name
         
-    def _remove_fid(self, b, s):
+    def _remove_fid(self, **kwargs):
+        d = deepcopy(kwargs)
+        s = d['fiducial_correction']['fid_size']
+        b = d['fiducial_correction']['fid_brightness']
+        gain = d['camera_gain']
         self._search_fitresults()
         List_of_corrected = []
         for fr in self.fitpathlist:
@@ -172,8 +167,12 @@ class Analysis(object):
             for feu in feus:
                 feu = np.array(feu)
                 feu = np.append(feu[0:2] - [s,s], feu[0:2] + [s,s])
-                df = df[(df.X<feu[0]) | (df.Y<feu[1]) | (df.X>feu[2]) | (df.Y>feu[3])]
-                df = df[df.origValue<2*b]
+                df = df[(df.origX<feu[0]) | (df.origY<feu[1]) | 
+                 (df.origX>feu[2]) | (df.origY>feu[3])]
+                if d['GDSC_SMLM_version'] == 1:
+                    df = df[df.origValue<2*b]
+                else:
+                    df = df[df.origValue<(2*b/gain)]
             df = df.reset_index(drop=True)
             df.to_csv(op.join(op.dirname(fit_res), 
             'FitResults_FeuRemoved.txt'), index = False, sep = '\t')
@@ -198,20 +197,20 @@ class Analysis(object):
             
     def _rendering(self, **kwargs):
         d = deepcopy(kwargs)
-        ImageJ_path = d['ImageJ_path']
-        Rendering_script_path = d['GDSCSMLM_script_path']
-        json_file = d['json_file']
+        if d['GDSC_SMLM_version'] == 1:
+            ImageJ_path = self.config_d['imageJ_GDSCSMLM1_path']
+            Rendering_script_path = self.config_d['Rendering_script_path1']
+        elif d['GDSC_SMLM_version'] == 2:
+            ImageJ_path = self.config_d['imageJ_GDSCSMLM2_path']
+            Rendering_script_path = self.config_d['Rendering_script_path2']
+
+        json_file = self.config_d['json_file']
         with open(json_file, 'r') as f:
             d2 = json.load(f)
         d2['results_dir'] = self.results_dir
         with open(json_file, 'w') as f:
             json.dump(d2, f, indent=2)
 
-        if not Rendering_script_path.endswith('.py'):
-            Rendering_script_path = op.join(Rendering_script_path, 'Rendering_SR.py')
-        else:
-            Rendering_script_path = op.join(op.dirname(Rendering_script_path), 'Rendering_SR.py')
-            
         call([ImageJ_path, "--ij2", "--run", Rendering_script_path,
             'jsonpath="%s"' %json_file])
                       
@@ -225,6 +224,9 @@ class Analysis(object):
         '''
 
         # Check if the matched fitresults exists
+        if kwargs['GDSC_SMLM_version'] not in [1,2]:
+            raise NameError("GDSC_SMLM_version must be 1 or 2")
+
         if kwargs['GDSC_SMLM_peak_fit']:
             if verbose:
                 sys.stdout.write('Looking for tiff image files meeting '\
@@ -288,8 +290,7 @@ class Analysis(object):
         else:
             # Remove fiducials
             if kwargs['fiducial_correction']['run']:
-                self._remove_fid(kwargs['fiducial_correction']['fid_brightness'],
-                kwargs['fiducial_correction']['fid_size'])
+                self._remove_fid(**kwargs)
                 
         self._search_fitresults()
         assert self.n_fit > 0, 'No fit results files found!\n'
@@ -477,7 +478,7 @@ class Analysis(object):
                         i += 1
 
             for fit in self.resultslist:
-                fit.save_with_header()
+                fit.save_with_header(**kwargs)
                 
             if kwargs['Rendering_SR']:
                 if verbose:
@@ -624,48 +625,47 @@ if __name__ == '__main__':
     import importlib
     importlib.reload(SR_fit_lib)
     
-    directory = r"C:\Users\Eric\OneDrive - University Of Cambridge\igorplay\feudicial"
+    directory = r"C:\Users\yz520\Desktop\OneDrive - University Of Cambridge\igorplay\feudicial"
     image_condition = lambda img: img.endswith('_561.tif')  # Change conditions to search for imagestacks
     input_dict = {
     # ==== Parameters for all analysis ====
     'pixel_size': 98.6 , # nm
     'sr_scale': 8 , # The scale used in length analysis and generation of super-res images 
-    'camera_bias': 500 ,
+    'camera_bias': 500.0 ,
     'camera_gain': 55.50 ,
     'frame_length': 50 , # ms per frame, i.e. exposure time
-    'create_symlink_for_images': False, # Needs admin mode
+    'create_symlink_for_images': False, # Needs admin mode. Do not run if images are in Dropbox.
+    'GDSC_SMLM_version': 2, # 1 or 2
     
     # ==== Parameters for GDSC SMLM fitting ====
     'GDSC_SMLM_peak_fit': True, # If False, the parameters for GDSC SMLM fitting will be ignored, only cluster_analysis will be run
     'trim_track': {'run': False, 'frame_number': 4000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
-    'BG_measurement': {'run': True, 'correct_precision': True, 'kappa': 2}, # measure the background of the image_stack. (median pixel value) 
+    'BG_measurement': {'run': True, 'correct_precision': False, 'kappa': 0.5}, # measure the background of the image_stack. (median pixel value) 
     # if correct_precision set to True, the fitting precision will be adjusted according to the background level: higher background -> higher precision threshold. kappa controls the extent of the adjustment.
-    'signal_strength': 100, 
-    'precision': 20, # nm
+    'signal_strength': 3, # Caution: Different measure in GDSCSMLM1 and GDSCSMLM 2
+    'precision': 20.0, # nm
     'min_photons': 0,
-    'fiducial_correction': {'run':True, 'fid_file':True, 'fid_brightness':20000,
+    'fiducial_correction': {'run':True, 'fid_file':False, 'fid_brightness':50000,
     'fid_size': 6, 'fid_last_time':500, 'smoothing_para':0.25, 'limit_smoothing':True},
     # fid_file enables manually defined fiducials saved in 'Fiducials.txt', 
-    # fid_brightness, fid_size, fid_last_time defines the criteria for automatically finding fiducials
+    # fid_brightness, fid_size, fid_last_time (frames) defines the criteria for automatically finding fiducials
     # smoothing_para and limit_smoothing controls the correction smoothing. If smoothing fails try setting limit_smotthing to False
+    'spot_filter': {'filter_type': 'Difference', 'smoothing':0.20, 'smoothing2': 1.50}, # Only applicable to GDSC_SMLM_2, filter_type either Single or Difference,
+    # smoothing, smoothing2 control the filter
     
     # ==== Parameters for cluster analysis and measurements ====
-    'cluster_analysis_measurement': False, # If False, only GDSC fitting will be run
+    'cluster_analysis_measurement': True, # If False, only GDSC fitting will be run
     'fitresults_file_name': 'default', # default: 'FitResults.txt' or 'FitResults_FeuRemoved.txt' if fiducial corrected
-    'DBSCAN_eps': 100 , # nm, not pixels!
+    'DBSCAN_eps': 100.0 , # nm, not pixels!
     'DBSCAN_min_samples': 5 ,
-    'burst_filter': {'run':False, 'fill_gap':50, 'min_burst':3} ,  # filter out the aggregates with less than min_bursts
-    'burst_analysis': {'run':False, 'fill_gap':5, 'remove_single':True} ,  # analyse the burst number, burst length, dark length of the aggregates
+    'burst_filter': {'run':True, 'fill_gap':50, 'min_burst':3} ,  # filter out the aggregates with less than min_bursts
+    'burst_analysis': {'run':True, 'fill_gap':5, 'remove_single':True} ,  # analyse the burst number, burst length, dark length of the aggregates
     'length_measure': {'run':False, 'algorithm':'close', 'sigma':2}, # algorithm: blur or close; if blur, sigma is the gaussian sigma; if close, sigma is the closing square size
     'eccentricity_measure': False ,
     'convexhull_measure': False , # measure the area of the cluster
     'Rendering_SR': True , # rendering clustered SR images in imageJ
     'save_histogram':True,
-    
-    # ==== Setup the analysis, only change it when first run ====
-    'ImageJ_path': r"C:\Users\Eric\fiji-win64\Fiji.app\ImageJ-win64.exe" ,
-    'GDSCSMLM_script_path': r"C:\Users\Eric\Documents\data analysis package\Jython" ,
-    'json_file': "C://Users//Eric//to_ImageJ.json" # Needs to be // otherwise it will fail !
+
     }
 
     Analysis(directory).run_fit(verbose=True, image_condition=image_condition, **input_dict)
