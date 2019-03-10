@@ -1,3 +1,19 @@
+SR_toolkit_v3_4
+
+Issued: 10-03-2019
+@author: Eric Kobayashi
+
+Changes over v3_3:
+    
+    1. Add support of GDSC SMLM 2, although the package is still an unstable release,
+    it gives the difference Gaussian filter which could be useful. The other parameters
+    have not yet been included in SR_toolkit however if any of them is significant it 
+    will be added in a future version.
+    
+    2. Add setup file for easy installation.
+    
+    3. Simplify the code of generating fit header file.    
+
 SR_toolkit_v3_3
 
 Issued: 01-Feb-2019
