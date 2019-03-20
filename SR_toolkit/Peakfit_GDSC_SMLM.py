@@ -11,7 +11,7 @@ import ij.plugin.frame.RoiManager as RoiManager
 import ij.plugin.ZProjector as ZProjector
 import json
 from ij.plugin import SubstackMaker
-IJ.redirectErrorMessages()
+
 
 def GDSC_SMLM(directory, file_name, mydir, trim_track, bg_measurement, gdsc_smlm_xml, pixel_size, camera_gain, camera_bias, frame_length, signal_strength, precision, min_photons, sr_scale):
 	try:
@@ -38,6 +38,7 @@ def GDSC_SMLM(directory, file_name, mydir, trim_track, bg_measurement, gdsc_smlm
 
 	imp.setTitle("Image")
 	imp.show()
+	IJ.redirectErrorMessages()
 	IJ.run(imp, "Peak Fit", "template=[None] config_file=["+gdsc_smlm_xml+"] calibration="+str(pixel_size)+
 	" gain="+str(camera_gain)+" exposure_time="+str(frame_length)+" initial_stddev0=2.000 initial_stddev1=2.000 initial_angle=0.000 "+
 	"smoothing=0.50 smoothing2=3 search_width=3 fit_solver=[Least Squares Estimator (LSE)] "+
@@ -144,24 +145,34 @@ def Correct_fidicials_with_fid(img_dir, directory, sr_scale, w, h, fid_size, smo
 	fit_name = "FitResults_Corrected.txt"
 	IJ.run("Clear Memory Results", "All")
 	fitresultfile = op.join(directory, "Image.results.xls")
+	IJ.redirectErrorMessages()
 	IJ.run("Results Manager", "coordinate=["+
 	fitresultfile+"] input=File input_file=["+fitresultfile+"] results_table=Uncalibrated "+
 	"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
 	"image_scale="+str(sr_scale)+" image_window=0 results_in_memory")
+	drift_file = op.join(directory, "Drift.txt")
 	try:
+		IJ.redirectErrorMessages()
 		IJ.run("Drift Calculator", "input=[Image (LSE)] method=[Marked ROIs] "+
 		"max_iterations=50 relative_error=0.010 smoothing="+str(smoothing_para)+
 		" {}".format("limit_smoothing " if limit_smoothing else "")+
 		"min_smoothing_points=10 max_smoothing_points=50 smoothing_iterations=1 "+
 		"plot_drift update_method=[New dataset] save_drift "+
-		"drift_file=["+op.join(directory, "Drift.txt")+"]")
-		wm.getWindow("Fit Results").close()
-		IJ.run("Results Manager", "input=[Image (LSE) (Corrected)]  results_table=Uncalibrated "+
-		"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
-		"image_scale="+str(sr_scale)+" image_window=0 results_file=[] results_in_memory")
+		"drift_file=["+drift_file+"]")
 	except:
 		IJ.run("Close All", "")
 		return False
+
+	if not op.isfile(drift_file):
+		IJ.run("Close All", "")
+		return False
+		
+	wm.getWindow("Fit Results").close()
+	IJ.redirectErrorMessages()
+	IJ.run("Results Manager", "input=[Image (LSE) (Corrected)]  results_table=Uncalibrated "+
+	"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
+	"image_scale="+str(sr_scale)+" image_window=0 results_file=[] results_in_memory")
+
 	IJ.selectWindow("Fit Results")
 	IJ.saveAs("text", op.join(directory, fit_name))
 	IJ.run("Close All", "")
@@ -171,27 +182,39 @@ def Correct_fidicials(directory, sr_scale, smoothing_para, limit_smoothing):
 	fit_name = "FitResults_Corrected.txt"
 	IJ.run("Clear Memory Results", "All")
 	fitresultfile = op.join(directory, "Image.results.xls")
+	IJ.redirectErrorMessages()
 	IJ.run("Results Manager", "coordinate=["+
 	fitresultfile+"] input=File input_file=["+fitresultfile+"] results_table=Uncalibrated "+
 	"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
 	"image_scale="+str(sr_scale)+" image_window=0 results_in_memory")
+	drift_file = op.join(directory, "Drift.txt")
 	try:
+		IJ.redirectErrorMessages()
 		IJ.run("Drift Calculator", "input=[Image (LSE)] method=[Marked ROIs] "+
 		"max_iterations=50 relative_error=0.010 smoothing="+str(smoothing_para)+
 		" {}".format("limit_smoothing " if limit_smoothing else "")+
 		"min_smoothing_points=10 max_smoothing_points=50 smoothing_iterations=1 "+
 		"plot_drift update_method=[New dataset] save_drift "+
-		"drift_file=["+op.join(directory, "Drift.txt")+"]")
-		wm.getWindow("Fit Results").close()
-		IJ.run("Results Manager", "input=[Image (LSE) (Corrected)]  results_table=Uncalibrated "+
-		"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
-		"image_scale="+str(sr_scale)+" image_window=0 results_file=[] results_in_memory")
+		"drift_file=["+drift_file+"]")
+		wm.getActiveWindow().removeNotify()
 	except:
 		IJ.run("Close All", "")
 		return False
+
+	if not op.isfile(drift_file):
+		IJ.run("Close All", "")
+		return False
+		
+	wm.getWindow("Fit Results").close()
+	IJ.redirectErrorMessages()
+	IJ.run("Results Manager", "input=[Image (LSE) (Corrected)]  results_table=Uncalibrated "+
+	"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
+	"image_scale="+str(sr_scale)+" image_window=0 results_file=[] results_in_memory")
+
 	IJ.selectWindow("Fit Results")
 	IJ.saveAs("text", op.join(directory, fit_name))
 	IJ.run("Close All", "")
+	return True
 
 def create_image_pixel_median(img, savedir, trim_track): 
 	imp = IJ.openVirtual(img)
