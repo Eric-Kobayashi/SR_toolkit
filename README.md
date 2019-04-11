@@ -1,3 +1,9 @@
+# Important Notice
+SR_toolkit_v3_5 is under development with a more accurate clustering strategy and therefore 
+more punctuate reconstruction of super-resolution imge thanks to @StevetheChemist's advice.
+If you would like to use this toolkit for publication, please wait for v3_5 (before end of 
+April 2019)
+
 SR_toolkit_v3_4
 
 Issued: 10-03-2019
