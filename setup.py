@@ -13,8 +13,10 @@ if __name__ == '__main__':
     imageJ_GDSCSMLM2_path = r"C:\Users\yz520\Desktop\fiji-win64-GDSCSMLM2\Fiji.app\ImageJ-win64.exe"
     
     # ======= setup code, no need to change =======
-    if op.isdir(setup_path):
+    if op.isdir(setup_path) and op.basename(setup_path) == 'SR_toolkit':
         sh.rmtree(setup_path)
+    if op.basename(setup_path) != 'SR_toolkit':
+        setup_path = op.join(setup_path, 'SR_toolkit')
     script_path = os.path.dirname(os.path.abspath(__file__))
     sh.copytree(op.join(script_path, 'SR_toolkit'), setup_path)
     if setup_path not in os.getenv('PYTHONPATH'):
