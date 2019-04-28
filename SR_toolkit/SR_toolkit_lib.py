@@ -1,19 +1,33 @@
 '''
-SR_toolkit_v3_4
+SR_toolkit_v3_5
 
-Issued: 10-03-2019
+Issued: 28-04-2019
 @author: Eric Kobayashi
 
-Changes over v3_3:
+Changes over v3_4:
     
-    1. Add support of GDSC SMLM 2, although the package is still an unstable release,
-    it gives the difference Gaussian filter which could be useful. The other parameters
-    have not yet been included in SR_toolkit however if any of them is significant it 
-    will be added in a future version.
+    Major changes:
+        
+    1. Add temporal grouping: group localisations into molecules, then group
+    them into individual bursts (using 2D and 1D DBSCAN, respectively.) Filters
+    can be applied on burst number of molecule, molecule size and on time
+    proportion of burst (blinking molecules can be removed). The X, Y positions
+    and precisions in each group are averaged to enable further clustering.
     
-    2. Add setup file for easy installation.
+    2. Add DBSCAN clustering with molecules or bursts. DBSCAN with bursts will 
+    be suitable with STORM/PALM, while molecule suits with PAINT.
     
-    3. Simplify the code of generating fit header file.    
+    3. Remove the burst filter and burst analysis because temporal grouping 
+    does the same job.
+    
+    Minor changes:
+    
+    1. Move to_ImageJ.json to individual analysis folders, allowing multiple 
+    analysis conducted at the same time. 
+    
+    2. Simplify the compatiablity code with GDSC SMLM 2.
+    
+    3. Simplify the data saving code.
     
 '''
 
@@ -31,7 +45,7 @@ from copy import deepcopy
 from subprocess import call
 import warnings 
 import ctypes
-import SR_fit_lib
+from SR_fit_lib import SR_fit
 
 class Analysis(object):
     '''
@@ -45,6 +59,7 @@ class Analysis(object):
         self.results_dir = op.join(path, 'Analysis_'+timestring)
         os.mkdir(self.results_dir)
         sys.stdout.write("Time: {} Analysis starts!\n\n".format(timestring))
+        self.json_file = op.join(self.results_dir, 'to_imageJ.json')
         self.json_log = OrderedDict()
         self.json_log['Time'] = timestring
         self.json_log['Path'] = path
@@ -75,8 +90,8 @@ class Analysis(object):
             for f in files:
                 if f == 'peak_fit_log.json':
                     List_of_peak_fit_info_file.append((roots, f))
-        for json_root, json_file in List_of_peak_fit_info_file:
-            with open(op.join(json_root, json_file), 'r') as f:
+        for json_root, json_log in List_of_peak_fit_info_file:
+            with open(op.join(json_root, json_log), 'r') as f:
                 Dict_of_peak_fit_info[json_root] = json.load(f)
         return Dict_of_peak_fit_info
             
@@ -115,8 +130,7 @@ class Analysis(object):
         d = deepcopy(kwargs)
         d['filelist'] = self.imglist
         d['results_dir'] = self.results_dir
-        json_file = self.config_d['json_file']
-        with open(json_file, 'w') as f:
+        with open(self.json_file, 'w') as f:
             json.dump(d, f, indent=2)
         if d['GDSC_SMLM_version'] == 1:
             ImageJ_path = self.config_d['imageJ_GDSCSMLM1_path']
@@ -126,15 +140,15 @@ class Analysis(object):
             GDSCSMLM_script_path = self.config_d['GDSCSMLM2_script_path']
         
         call([ImageJ_path, "--ij2", "--run", GDSCSMLM_script_path,
-            'jsonpath="%s"' %json_file])
+            'jsonpath="%s"' %self.json_file.replace('\\','//')])
         
         # Read the ImageJ log output
-        with open(json_file, 'r') as f:
+        with open(self.json_file, 'r') as f:
             d = json.load(f)
         assert 'fit_name' in d.keys(), 'Error in ImageJ script execution!\n'
         fit_name = d['fit_name']
         self._log_fit_info(fit_name, **kwargs)
-        self.json_log['ImageJ_log'] =  d['ImageJ_log']
+        self.json_log['ImageJ_log'] = d['ImageJ_log']
          
         error_log = [(img, log) for img, log in d['ImageJ_log'].items() 
                     if 'Error' in ''.join(log.values())]
@@ -204,15 +218,12 @@ class Analysis(object):
             ImageJ_path = self.config_d['imageJ_GDSCSMLM2_path']
             Rendering_script_path = self.config_d['Rendering_script_path2']
 
-        json_file = self.config_d['json_file']
-        with open(json_file, 'r') as f:
-            d2 = json.load(f)
-        d2['results_dir'] = self.results_dir
-        with open(json_file, 'w') as f:
+        d2 = {'sr_scale': d['sr_scale'], 'results_dir': self.results_dir}
+        with open(self.json_file, 'w') as f:
             json.dump(d2, f, indent=2)
 
         call([ImageJ_path, "--ij2", "--run", Rendering_script_path,
-            'jsonpath="%s"' %json_file])
+            'jsonpath="%s"' %self.json_file.replace('\\','//')])
                       
     def run_fit(self, image_condition=None, verbose=True, **kwargs):
         '''
@@ -259,7 +270,7 @@ class Analysis(object):
         else:
             if verbose:
                 sys.stdout.write('GDSC SMLM peak fit turned off.\n\n')
-            self.fit_name = 'NotApplicable'
+            self.fit_name = kwargs['fitresults_file_name']
             self.fitresults_folder = self.path
             
         self.cluster_fit(verbose=verbose, **kwargs)               
@@ -267,6 +278,9 @@ class Analysis(object):
     
         if kwargs['GDSC_SMLM_peak_fit'] and kwargs['create_symlink_for_images']:
             self._create_symlinks()
+        
+        try: os.remove(self.json_file)
+        except: pass
         
         sys.stdout.write("\nTime: {} Analysis finished!\n\n".format(
         datetime.now().strftime('%Y-%m-%d_%H-%M-%S')))
@@ -299,12 +313,7 @@ class Analysis(object):
             sys.stdout.write("Looking for super-res fit result files '{}' in \npath: {}\n".format(
                 self.fit_name, self.fitresults_folder))  
             
-        self.resultslist = [SR_fit_lib.SR_fit(fitpath) for fitpath in self.fitpathlist]
-        # OrderedDefaultDict is used here. (defined below)
-        self.to_summary = OrderedDefaultDict(list) 
-        self.to_hist_cluster = OrderedDefaultDict(list) 
-        self.to_hist_len = OrderedDefaultDict(list) 
-        self.to_hist_darklen = OrderedDefaultDict(list) 
+        self.resultslist = [SR_fit(fitpath) for fitpath in self.fitpathlist]
         if verbose:
             sys.stdout.write("{} fit results found.\n\n".format(self.n_fit))
         
@@ -328,184 +337,71 @@ class Analysis(object):
             fit_ID = 'T'+ self.timestring + '_' + fit.path # This serves as the
                         # primary key for the summary database
             fit.update_ID(fit_ID)
-            self.to_summary['Analysis_ID'].append(fit.fit_ID)
-            self.to_summary['Raw_loc_number'].append(fit.loc_num())
-            self.to_summary['Frame_number'].append(fit.framenum)
-            if kwargs['BG_measurement']['run']:
-                self.to_summary['BG_level'].append(
-                 fit.output_attr_fromfile('median_intensity.txt'))
-                if kwargs['BG_measurement']['correct_precision']:
-                    self.to_summary['Corrected_precision'].append(
-                     fit.output_attr_fromfile('corrected_precision.txt'))
-            if 'Fiducials.txt' in os.listdir(fit.root):
-                fid_file = op.join(fit.root, 'Fiducials.txt')
-                feus = pd.read_table(fid_file).values
-                self.to_summary['Fiducials_number'].append(len(feus))
-            else:
-                self.to_summary['Fiducials_number'].append(0)
+            fit.update_peakfitinfo()
             
-        if kwargs['cluster_analysis_measurement']:
-            # Run cluster analysis
-            if verbose:
-                sys.stdout.write("Run cluster analysis:\n")        
-                i = 1
-            for fit in self.resultslist:
-                fit.cluster_info()
-                
-                if verbose:
-                    sys.stdout.write('\r')
-                    sys.stdout.write("%d%%" % (i/self.n_fit*100))
-                    sys.stdout.flush()
-                    i += 1
-                    
-            if verbose:
-                sys.stdout.write("\nRun burst filter:\n")             
-                i = 1
-            # Run burst filter if applied
-            paras = kwargs['burst_filter'].copy()
+        # Run temporal grouping
+        paras = kwargs['temporal_grouping'].copy()
+        if paras.pop('run', False):
+            self._shinchoku_run(SR_fit.temporal_grouping, namae='temporal grouping',
+            verbose=verbose, **paras)
+
+        # Run cluster analysis
+        paras = kwargs['cluster_analysis'].copy()
+        if paras.pop('run', False):
+            if paras['cluster_subject'] in ['mol', 'burst']:
+                assert kwargs['temporal_grouping']['run'], '\nNo temporal grouping run, cannot set cluster analysis on mol or burst.'
+            self._shinchoku_run(SR_fit.cluster_info, namae='cluster analysis',
+            verbose=verbose, **paras)                
+
+            paras = kwargs['length_measure'].copy()
             if paras.pop('run', False):
-                for fit in self.resultslist:
-                    fit.burst_filter(**paras)
-                    self.to_summary['Filtered_cluster'].append(fit.filtered_cluster)
-                    
-                    if verbose:
-                        sys.stdout.write('\r')
-                        sys.stdout.write("%d%%" % (i/self.n_fit*100))
-                        sys.stdout.flush()
-                        i += 1
-                    
-            # Output cluster info after burst filter        
-            for fit in self.resultslist:
-                self.to_summary['Clustered_loc_number'].append(fit.loc_num())
-                self.to_summary['Number_of_clusters'].append(fit.cluster_num())
-                self.to_summary['Average_loc_per_cluster'].append(fit.ave_cluster_locnum())
-                
-                if kwargs['save_histogram']:
-                    self.to_hist_cluster['Analysis_ID'] += [fit.fit_ID]*fit.cluster_num()
-                    self.to_hist_cluster['Cluster_ID'] += fit.output_histogram('num')
-                    self.to_hist_cluster['Loc_number'] += fit.output_histogram('loc_num')
-                    
-            # Run burst analysis if applied    
-            if verbose:
-                sys.stdout.write("\nRun burst analysis:\n")             
-                i = 1  
-            
-            paras = kwargs['burst_analysis'].copy()
-            if paras.pop('run', False):
-                for fit in self.resultslist:
-                    fit.burst_info(**paras)
-    
-                    self.to_summary['Average_burst_number'].append(fit.ave_burstnum)
-                    self.to_summary['Average_burst_length_(s)'].append(fit.ave_burstlen)
-                    self.to_summary['Average_dark_length_(s)'].append(fit.ave_darklen)
-                    self.to_summary['Average_lighttodark_ratio'].append(fit.ave_lighttodark)
-                    
-                    if kwargs['save_histogram']:
-                        self.to_hist_cluster['Burst_number'] += fit.output_histogram('burstnum')
-                        self.to_hist_cluster['Average_burst_length_(s)'] += fit.output_histogram('ave_burstlen')
-                        self.to_hist_cluster['Average_dark_length_(s)'] += fit.output_histogram('ave_darklen')
-                        
-                        alllen = fit.output_noncluster_histogram('alllen')
-                        self.to_hist_len['Analysis_ID'] += [fit.fit_ID]*len(alllen[0])
-                        self.to_hist_len['Cluster_ID'] += alllen[0]
-                        self.to_hist_len['All_burst_length_(s)'] += alllen[1]
-                        
-                        alldarklen = fit.output_noncluster_histogram('alldarklen')
-                        self.to_hist_darklen['Analysis_ID'] += [fit_ID]*len(alldarklen[0])
-                        self.to_hist_darklen['Cluster_ID'] += alldarklen[0]
-                        self.to_hist_darklen['All_dark_length_(s)'] += alldarklen[1]
-                    
-                    if verbose:
-                        sys.stdout.write('\r')
-                        sys.stdout.write("%d%%" % (i/self.n_fit*100))
-                        sys.stdout.flush()
-                        i += 1
-    
-            if verbose:
-                sys.stdout.write("\nRun length measurement:\n")             
-                i = 1     
-            paras = kwargs['length_measure'].copy()       
-            if paras.pop('run', False):
-                for fit in self.resultslist:
-                    fit.length_measure(**paras)
-                    self.to_summary['Average_length_(nm)'].append(fit.ave_length)
-                    self.to_summary['Average_density_1D'].append(fit.ave_density_1D)
-                    
-                    if kwargs['save_histogram']:
-                        self.to_hist_cluster['Length_(nm)'] += fit.output_histogram('nm_length')
-                        
-                    if verbose:
-                        sys.stdout.write('\r')
-                        sys.stdout.write("%d%%" % (i/self.n_fit*100))
-                        sys.stdout.flush()
-                        i += 1
-                        
-            if verbose:
-                sys.stdout.write("\nRun eccentricity measurement:\n")             
-                i = 1      
+                self._shinchoku_run(SR_fit.length_measure, namae='length measurement',
+                verbose=verbose, **paras)  
+  
             if kwargs['eccentricity_measure']:
-                for fit in self.resultslist:
-                    fit.eccentricity_measure()
-                    self.to_summary['Average_eccentricity'].append(fit.ave_ecc)
-                    self.to_summary['Average_flattening'].append(fit.ave_flattening)
-                    
-                    if kwargs['save_histogram']:
-                        self.to_hist_cluster['Eccentricity'] += fit.output_histogram('ecc')
-                        self.to_hist_cluster['Flattening'] += fit.output_histogram('flattening')
-                        
-                    if verbose:
-                        sys.stdout.write('\r')
-                        sys.stdout.write("%d%%" % (i/self.n_fit*100))
-                        sys.stdout.flush()
-                        i += 1
-    
+                self._shinchoku_run(SR_fit.eccentricity_measure, namae='eccentricity measurement',
+                 verbose=verbose)                 
+            if kwargs['convexhull_measure']:            
+                self._shinchoku_run(SR_fit.convexhull_meausure, namae='convex hull area measurement',
+                 verbose=verbose) 
+               
+        if kwargs['Rendering_SR']:
             if verbose:
-                sys.stdout.write("\nRun convex hull area measurement:\n")             
-                i = 1           
-            if kwargs['convexhull_measure']:
-                for fit in self.resultslist:
-                    fit.convexhull_meausure()
-                    self.to_summary['Average_convexhull_area_(nm2)'].append(fit.ave_area)
-                    self.to_summary['Average_density_2D'].append(fit.ave_density_2D)
-                    
-                    if kwargs['save_histogram']:
-                        self.to_hist_cluster['Convex_hull_area_(nm2)'] += fit.output_histogram('nm2_area')
-                        
-                    if verbose:
-                        sys.stdout.write('\r')
-                        sys.stdout.write("%d%%" % (i/self.n_fit*100))
-                        sys.stdout.flush()
-                        i += 1
-
+                sys.stdout.write("\nRendering clustered SR images results...")
             for fit in self.resultslist:
-                fit.save_with_header(**kwargs)
-                
-            if kwargs['Rendering_SR']:
-                if verbose:
-                    sys.stdout.write("\nRendering clustered SR images results...")    
-                for fit in self.resultslist:
-                    fit.labelled_cluster()
-                self._rendering(**kwargs)
-                 
-            if verbose:
-                sys.stdout.write("\nSaving results...")       
-            if kwargs['save_histogram']:
-                df = self._save_histogram()
-                if kwargs['Rendering_SR']:
-                    for fit in self.resultslist:
-                        all_clusters_info = op.join(fit.results_root, 'all_clusters_info.csv')
-                        try:
-                            fit_hist = df[df['Analysis_ID'] == fit.fit_ID].copy()
-                        except TypeError:
-                            continue
-                        fit_hist.drop(columns=['Analysis_ID']).to_csv(all_clusters_info, index=False)
-            
-        else:
-            if verbose:
-                sys.stdout.write("\nNo cluster analysis run. Saving results...")         
-        self._save_summary()
-                
+                if kwargs['temporal_grouping']['run']:
+                    fit.save_with_header(subj='burst', **kwargs)
+                    fit.save_with_header(subj='mol', **kwargs)
+                if kwargs['cluster_analysis']['run']: 
+                    fit.save_with_header(subj='cluster', **kwargs)
+                    fit.labelled_cluster()                    
 
+            self._rendering(**kwargs)     
+                       
+        if verbose:
+            sys.stdout.write("\nSaving results...")       
+                 
+        if kwargs['save_histogram']:
+                self._save_histogram()        
+        self._save_summary()
+    
+    def _shinchoku_run(self, func, namae='analysis', verbose=True, **paras):
+        '''
+        Loop over all images. Show progress if verbose.
+        '''
+        if verbose:
+            sys.stdout.write("\nRun {}:\n".format(namae))             
+            i = 1  
+            for fit in self.resultslist:
+                func(fit, **paras)
+                sys.stdout.write('\r')
+                sys.stdout.write("%d%%" % (i/self.n_fit*100))
+                sys.stdout.flush()
+                i += 1
+        else:
+            for fit in self.resultslist:
+                func(fit, **paras)
+        
     def _search_fitresults(self):
         '''
         This function finds the all the fit results file in fitresults_folder.
@@ -525,107 +421,59 @@ class Analysis(object):
         
         '''
         d = deepcopy(kwargs)
-        try:
-            d['num_of_images'] = self.n_img
-        except:
-            d['num_of_images'] = np.nan
+        try: d['num_of_images'] = self.n_img
+        except: d['num_of_images'] = np.nan
             
-        try:
-            d['num_of_fitresults'] = self.n_fit
-        except:
-            d['num_of_fitresults'] = np.nan
+        try: d['num_of_fitresults'] = self.n_fit
+        except: d['num_of_fitresults'] = np.nan
             
-        try:
-            d['fitresults_source'] = self.fitresults_folder
-        except:
-            d['fitresults_source'] = np.nan
+        try: d['fitresults_source'] = self.fitresults_folder
+        except: d['fitresults_source'] = np.nan
             
-        try:
-            d['fitresults_name'] = self.fit_name
-        except:
-            d['fitresults_name'] = np.nan
+        try: d['fitresults_name'] = self.fit_name
+        except: d['fitresults_name'] = np.nan
             
         self.json_log.update(d)
         if not kwargs['GDSC_SMLM_peak_fit']:
-            self.json_log['trim_track'] = 'NotApplicable'
-            self.json_log['signal_strength'] = 'NotApplicable'
-            self.json_log['precision'] = 'NotApplicable'
-            self.json_log['min_photons'] = 'NotApplicable'
-            self.json_log['fiducial_correction'] = 'NotApplicable'
+            try: 
+                with open(op.join(self.fitresults_folder, 'log.json'), 'r') as info:
+                    peak_fit_log = json.load(info)
+                self.json_log.update({k: peak_fit_log[k] for k in ['trim_track',
+                 'signal_strength', 'precision', 'min_photons', 'fiducial_correction']})
+            except:
+                self.json_log.update({k: None for k in ['trim_track', 'signal_strength',
+                'precision', 'min_photons', 'fiducial_correction']})
             
         with open(op.join(self.results_dir, "log.json"), 'w') as log:
             json.dump(self.json_log, log, indent=2)
         
     def _save_summary(self):
-        DF(self.to_summary).to_csv(op.join(self.results_dir, 'Summary.csv'),
-            columns=self.to_summary.keys(), index=False)
+        '''
+        Save the aggregated summary file
+        '''
+        to_save = []
+        for fit in self.resultslist:
+            to_save.append(fit.summarise())
+            
+        DF(to_save).to_csv(op.join(self.results_dir, 'Summary.csv'), index=False)
             
     def _save_histogram(self):
-        df_cluster = DF(self.to_hist_cluster)
-        df_cluster.to_csv(op.join(self.results_dir, 'Histogram_clusters.csv'),
-            columns=self.to_hist_cluster.keys(), index=False)
-            
-        DF(self.to_hist_len).to_csv(op.join(self.results_dir, 'Histogram_all_burstlen.csv'),
-            columns=self.to_hist_len.keys(), index=False)
-            
-        DF(self.to_hist_darklen).to_csv(op.join(self.results_dir, 'Histogram_all_darklen.csv'),
-            columns=self.to_hist_darklen.keys(), index=False)
-            
-        return df_cluster
-
-class OrderedDefaultDict(OrderedDict):
-    '''
-    Source: http://stackoverflow.com/a/6190500/562769
-    Order is preserved so the output dataframe columns follow the set order. 
-    Default method is used for dynamically adding new fields.
-    
-    '''
-    def __init__(self, default_factory=None, *a, **kw):
-        if (default_factory is not None and
-           not hasattr(default_factory, '__call__')):
-            raise TypeError('first argument must be callable')
-        OrderedDict.__init__(self, *a, **kw)
-        self.default_factory = default_factory
-
-    def __getitem__(self, key):
-        try:
-            return OrderedDict.__getitem__(self, key)
-        except KeyError:
-            return self.__missing__(key)
-
-    def __missing__(self, key):
-        if self.default_factory is None:
-            raise KeyError(key)
-        self[key] = value = self.default_factory()
-        return value
-
-    def __reduce__(self):
-        if self.default_factory is None:
-            args = tuple()
-        else:
-            args = self.default_factory,
-        return type(self), args, None, None, self.items()
-
-    def copy(self):
-        return self.__copy__()
-
-    def __copy__(self):
-        return type(self)(self.default_factory, self)
-
-    def __deepcopy__(self, memo):
-        import copy
-        return type(self)(self.default_factory,
-                          copy.deepcopy(self.items()))
-
-    def __repr__(self):
-        return 'OrderedDefaultDict(%s, %s)' % (self.default_factory,
-                                               OrderedDict.__repr__(self))
+        for subj in ['burst', 'mol', 'cluster']:
+            to_hist = []
+            for fit in self.resultslist:
+                try:
+                    to_hist.append(fit.output_histogram(subj))
+                    pd.concat(to_hist, ignore_index=True).to_csv(op.join(self.results_dir,
+                     'Histogram_{}.csv'.format(subj)), index=False)
+                except: pass
                                                
 if __name__ == '__main__':
     import importlib
+    import SR_fit_lib
     importlib.reload(SR_fit_lib)
+    from SR_fit_lib import SR_fit
     
-    directory = r"C:\Users\yz520\Desktop\OneDrive - University Of Cambridge\igorplay\feudicial"
+    directory = r"C:\Users\Eric\OneDrive - University Of Cambridge\igorplay\feudicial"
     image_condition = lambda img: img.endswith('_561.tif')  # Change conditions to search for imagestacks
     input_dict = {
     # ==== Parameters for all analysis ====
@@ -635,14 +483,14 @@ if __name__ == '__main__':
     'camera_gain': 55.50 ,
     'frame_length': 50 , # ms per frame, i.e. exposure time
     'create_symlink_for_images': False, # Needs admin mode. Do not run if images are in Dropbox.
-    'GDSC_SMLM_version': 2, # 1 or 2
+    'GDSC_SMLM_version': 1, # 1 or 2
     
     # ==== Parameters for GDSC SMLM fitting ====
     'GDSC_SMLM_peak_fit': True, # If False, the parameters for GDSC SMLM fitting will be ignored, only cluster_analysis will be run
-    'trim_track': {'run': False, 'frame_number': 4000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
+    'trim_track': {'run': True, 'frame_number': 4000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
     'BG_measurement': {'run': True, 'correct_precision': False, 'kappa': 0.5}, # measure the background of the image_stack. (median pixel value) 
     # if correct_precision set to True, the fitting precision will be adjusted according to the background level: higher background -> higher precision threshold. kappa controls the extent of the adjustment.
-    'signal_strength': 3, # Caution: Different measure in GDSCSMLM1 and GDSCSMLM 2
+    'signal_strength': 40, # Caution: Different measure in GDSCSMLM1 and GDSCSMLM 2
     'precision': 20.0, # nm
     'min_photons': 0,
     'fiducial_correction': {'run':True, 'fid_file':False, 'fid_brightness':50000,
@@ -654,18 +502,18 @@ if __name__ == '__main__':
     # smoothing, smoothing2 control the filter
     
     # ==== Parameters for cluster analysis and measurements ====
-    'cluster_analysis_measurement': True, # If False, only GDSC fitting will be run
     'fitresults_file_name': 'default', # default: 'FitResults.txt' or 'FitResults_FeuRemoved.txt' if fiducial corrected
-    'DBSCAN_eps': 100.0 , # nm, not pixels!
-    'DBSCAN_min_samples': 5 ,
-    'burst_filter': {'run':True, 'fill_gap':50, 'min_burst':3} ,  # filter out the aggregates with less than min_bursts
-    'burst_analysis': {'run':True, 'fill_gap':5, 'remove_single':True} ,  # analyse the burst number, burst length, dark length of the aggregates
+    
+    'temporal_grouping': {'run': True, 'dThresh':20, 'min_loc':2, 'max_mol_area':float('inf'),
+     'tThresh':2500, 'min_frame':2, 'min_burst':2, 'min_on_prop':0},
+     
+    'cluster_analysis': {'run': True, 'cluster_subject':'burst', # burst, mol, loc
+    'DBSCAN_eps_nm':200, 'DBSCAN_min_samples':2},
     'length_measure': {'run':False, 'algorithm':'close', 'sigma':2}, # algorithm: blur or close; if blur, sigma is the gaussian sigma; if close, sigma is the closing square size
-    'eccentricity_measure': False ,
-    'convexhull_measure': False , # measure the area of the cluster
+    'eccentricity_measure': True ,
+    'convexhull_measure': True , # measure the area of the cluster
     'Rendering_SR': True , # rendering clustered SR images in imageJ
     'save_histogram':True,
-
     }
 
     Analysis(directory).run_fit(verbose=True, image_condition=image_condition, **input_dict)

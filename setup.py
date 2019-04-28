@@ -6,11 +6,11 @@ from subprocess import call
 
 if __name__ == '__main__':
     # Here is where the script folder will be
-    setup_path = r"C:\Users\Public\Documents\Python Scripts\SR_toolkit"
+    setup_path = r"C:\Users\Eric\Python_Library\SR_toolkit"
     
     # Put imageJ path here
-    imageJ_GDSCSMLM1_path = r"C:\Users\yz520\Downloads\fiji-win64-20170530\Fiji.app\ImageJ-win64.exe"
-    imageJ_GDSCSMLM2_path = r"C:\Users\yz520\Desktop\fiji-win64-GDSCSMLM2\Fiji.app\ImageJ-win64.exe"
+    imageJ_GDSCSMLM1_path = r"C:\Users\Eric\Documents\fiji-win64\Fiji.app\ImageJ-win64.exe"
+    imageJ_GDSCSMLM2_path = r"C:\Users\Eric\Documents\fiji-win64-GDSCSMLM2\Fiji.app\ImageJ-win64.exe"
     
     # ======= setup code, no need to change =======
     if op.isdir(setup_path) and op.basename(setup_path) == 'SR_toolkit':
@@ -23,7 +23,6 @@ if __name__ == '__main__':
         call('setx PYTHONPATH "{}"'.format(setup_path))
     
     config_file = {}
-    config_file['json_file'] = op.join(setup_path, 'to_ImageJ.json').replace('\\','//')
     config_file['imageJ_GDSCSMLM1_path'] = imageJ_GDSCSMLM1_path
     config_file['imageJ_GDSCSMLM2_path'] = imageJ_GDSCSMLM2_path
     config_file['GDSCSMLM1_script_path'] = op.join(setup_path, 'Peakfit_GDSC_SMLM.py')

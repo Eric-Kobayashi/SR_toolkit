@@ -52,9 +52,9 @@ def GDSC_SMLM(directory, file_name, mydir, trim_track, bg_measurement, gdsc_smlm
 	
 	sr = wm.getWindow("Image (LSE) SuperRes")
 	IJ.selectWindow("Image (LSE) SuperRes")
-	IJ.saveAs("Tiff", op.join(mydir, "SR_"+str(signal_strength)+"_{:.2f}nm".format(precision)+str(min_photons)+"photons.srf.tif"))
+	IJ.saveAs("Tiff", op.join(mydir, "RawSR_"+str(signal_strength)+"_{:.2f}nm".format(precision)+str(min_photons)+"photons.srf.tif"))
 	IJ.run("Scale...", "x={0} y={0} width={1} height={2} interpolation=Bilinear average create".format(1.0/sr_scale, w, h))
-	IJ.saveAs("Tiff", op.join(mydir, "SR_unscaled.srf.tif"))
+	IJ.saveAs("Tiff", op.join(mydir, "RawSR_unscaled.srf.tif"))
 	wm.getCurrentWindow().close()
 	sr.close()
 	imp.close()

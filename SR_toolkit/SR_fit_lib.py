@@ -8,17 +8,19 @@ import os.path as op
 import pandas as pd
 import numpy as np
 import warnings
+import os
+import scipy
+import json
 from math import ceil
 from pandas import Series
 from pandas import DataFrame as DF
 from imageio import imwrite
 from skimage.morphology import skeletonize_3d, closing, square
 from scipy.ndimage.filters import gaussian_filter
+from scipy.spatial import ConvexHull
 from skimage.measure import regionprops
 from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN
-from collections import OrderedDict
-
 
 class SR_fit(object):
     '''
@@ -34,6 +36,12 @@ class SR_fit(object):
             
         self.path = filepath
         self.root = op.dirname(filepath)
+        
+        # For compatibility with GDSC SMLM 2
+        with open(filepath, 'r') as f:
+            contents = f.read()
+        with open(filepath, 'w') as f:
+            f.write(contents.replace('*',''))
 
         try:
             self.df = pd.read_table(filepath)       # default delimitor: space
@@ -42,20 +50,18 @@ class SR_fit(object):
         except:
             self._isfit = False          # Wrong filetype
             return
-        
         self._isfit = True
-        
         if len(self.df) == 0:
             self._empty = True
             return
-            
         self._empty = False
         
-        # Define logfile to store the analysis detail
-        # self.logfile
+        self.to_summary = {}         # initialise output
+        # For compatibility with GDSC SMLM 2
+        self.df = self.df.rename(columns={'T':'Frame', 'X (px)':'X', 'Y (px)':'Y'})
+        
             
-    def input_parameters(self, results_dir=None, pixel_size=None, camera_gain=None,
-     camera_bias=None, DBSCAN_eps=None, DBSCAN_min_samples=None, sr_scale=8, 
+    def input_parameters(self, results_dir=None, pixel_size=None, sr_scale=8, 
      frame_length=50, GDSC_SMLM_version=1, **kwargs):
         '''
         Initialise all the analysis parameters.
@@ -64,17 +70,10 @@ class SR_fit(object):
         '''
         
         self.pixel_size = pixel_size
-        self.camera_gain = camera_gain
-        self.camera_bias = camera_bias
-        self.DBSCAN_eps_nm = DBSCAN_eps
-        self.DBSCAN_eps = DBSCAN_eps/pixel_size
-        self.DBSCAN_min_samples = DBSCAN_min_samples
         self.sr_scale = sr_scale
-        self.frame_length = frame_length/1000
+        self.frame_length = frame_length/1000 # convert to sec
         self.results_root = results_dir
         self.version = GDSC_SMLM_version
-
-        # self.timestring = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         
         # Extract image information from image.results.xls
         image_details_file = "Image.results.xls"
@@ -82,37 +81,31 @@ class SR_fit(object):
         assert op.isfile(image_details), "Image metadata file not found!"
         with open(image_details, 'r') as metadata:
             metadata_content = metadata.read()
-            self.framenum = int(SR_fit._parse_xml(
-                                metadata_content, 'frames'))
-            self.width = int(SR_fit._parse_xml(
-                                metadata_content, 'width'))
-            self.height = int(SR_fit._parse_xml(
-                                metadata_content, 'height'))
+            self.framenum = int(SR_fit._parse_xml(metadata_content, 'frames'))
+            self.width = int(SR_fit._parse_xml(metadata_content, 'width'))
+            self.height = int(SR_fit._parse_xml(metadata_content, 'height'))
             self.header = metadata_content.split('#Frame')[0]
                                 
-    def cluster_info(self):
+    def cluster_info(self, cluster_subject='loc', DBSCAN_eps_nm=100, 
+     DBSCAN_min_samples=5):
         '''
-        Extract information from the cluster analysis results.
-        This method is essential. 
-        Replace 'easy_numbers' in v2.
-        
+        Extract information from the cluster analysis results.        
         '''
         
         if not self._isfit or self._empty:
             # No localisations
             return
         
-        cluster_analysis_file = "DBSCAN_eps_{:.2f}nm_minlocs_{}.txt".format(
-                                self.DBSCAN_eps_nm, self.DBSCAN_min_samples)
+        cluster_analysis_file = "DBSCAN_eps_{:.2f}nm_min_{}.csv".format(
+                                DBSCAN_eps_nm, DBSCAN_min_samples)
         cluster_analysis_file_path = op.join(self.results_root, 
                                     cluster_analysis_file)
-        if op.isfile(cluster_analysis_file_path):
-            # Cluster analysis is already done
-            self.df = pd.read_table(cluster_analysis_file_path)
-        else:
-            self._cluster_analysis(self.DBSCAN_eps, self.DBSCAN_min_samples)
-            self.df.to_csv(cluster_analysis_file_path,
-                index=False, sep='\t')
+
+        self._cluster_analysis(cluster_subject=cluster_subject, 
+         DBSCAN_eps_nm=DBSCAN_eps_nm, DBSCAN_min_samples=DBSCAN_min_samples)
+         
+        # Save cluster analysis result
+        self.df.to_csv(cluster_analysis_file_path, index=False)
             
         clustered_locs = self.df[self.df.Cluster > 0]
         self.unclustered_df = self.df[self.df.Cluster == 0]
@@ -125,67 +118,28 @@ class SR_fit(object):
             self._clustered = True
             
         self.clusterlist = []
+        self.all_cluster_info = {}
         cluster_labels = sorted(clustered_locs.Cluster.unique())
         clu_num = 1
         for clu_labels in cluster_labels:
-            self.clusterlist.append(cluster_track(clu_num,
-            clustered_locs[clustered_locs.Cluster == clu_labels]))
+            self.clusterlist.append(cluster_track(clu_num, cluster_subject,
+            self.frame_length, clustered_locs[clustered_locs.Cluster == clu_labels]))
             clu_num += 1  # Cluster analysis could miss some cluster number label
-    
-    def burst_filter(self, min_burst, fill_gap=50):
-        '''
-        Filter the bursts that have less than min_burst bursts
-        Recommend fill_gap to be set to 50, for removing blinking non-specific bindings
-        Single bursts are by default removed
-        '''
-        with pd.option_context('mode.chained_assignment', None):
-                # Suppress the SettingwithCopyWarning 
             
-            if self._isnan():
-                # No localisations
-                self.filtered_cluster = 0
-                return
-    
-            #print('\t\tNumber of spot before filtering: {}'.format(n_spot))
-            remain_cluster = []
-            for clu in self.clusterlist:
-                clu.burst_profile(fill_gap=fill_gap, frame_length=self.frame_length)
-                if clu.burstnum >= min_burst:
-                    remain_cluster.append(clu.num)
-            self.filtered_cluster = len(self.clusterlist)-len(remain_cluster)
+        # Save for summary
+        self.mean_cluattr('num', 'Cluster_ID')
+        try: self.to_summary['Average_cluster_locnum'] = self.mean_cluattr(
+             'loc_num', 'Num_localisation')
+        except: pass
+        
+        try: self.to_summary['Average_cluster_burstnum'] = self.mean_cluattr(
+             'burst_num', 'Num_burst')
+        except: pass
             
-            #print('\t\tNumber of spot after filtering: {}'.format(n_spot))
-            output_df = self.df[self.df.Cluster.isin(remain_cluster)].copy()
-            # rename all the cluster number to 1, 2, 3,...
-            cluster_dict = {v: k+1 for k, v in enumerate(remain_cluster)}
-            output_df['Cluster'] = output_df['Cluster'].map(cluster_dict)
-            self.clusterlist = [clu.update_num(cluster_dict) for 
-                clu in self.clusterlist if clu.num in remain_cluster]
-            self.df = output_df
-            # 
-            # output_df.to_csv(op.join(self.root,
-            # 'DBSCAN_Results_filtered_minburst_{}_fillgap_{}.txt'.format(min_burst, fill_gap)), 
-            # index = False, sep = '\t')
-            output_df.to_csv(op.join(self.results_root, 'DBSCAN_filtered.txt'),
-                index = False, sep = '\t')
-    
-    def burst_info(self, fill_gap, remove_single):
-        if self._isnan():
-            # No localisations
-            self.ave_burstlen, self.ave_burstnum, \
-                self.ave_darklen, self.ave_lighttodark = (np.nan,)*4
-            return
-        
-        for clu in self.clusterlist:
-            clu.burst_analysis(fill_gap=fill_gap, max_frame=self.framenum, 
-                frame_length=self.frame_length, remove_single=remove_single)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            self.ave_burstlen = np.nanmean([clu.ave_burstlen for clu in self.clusterlist])
-            self.ave_burstnum = np.nanmean([clu.burstnum for clu in self.clusterlist])
-            self.ave_darklen = np.nanmean([clu.ave_darklen for clu in self.clusterlist])
-            self.ave_lighttodark = np.nanmean([clu.lighttodark for clu in self.clusterlist])
-        
+        try: self.to_summary['Average_cluster_molnum'] = self.mean_cluattr(
+             'mol_num', 'Num_molecule')
+        except: pass
+      
     def length_measure(self, algorithm='blur', sigma=2):
         if self._isnan():
             # No localisations
@@ -197,13 +151,10 @@ class SR_fit(object):
             self._skeletonise(algorithm, sigma)
             for clu in self.clusterlist:
                 clu.length_measure(self.pixel_size/self.sr_scale)
-                
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            self.ave_length = np.nanmean([clu.nm_length for clu in self.clusterlist])
-            self.ave_density_1D = np.nanmean([clu.loc_num / clu.nm_length for 
-                                            clu in self.clusterlist])
-                                 
+        
+        self.to_summary['Average_length'] = self.mean_cluattr(
+         'nm_length', 'Length')    
+                           
     def eccentricity_measure(self):
         if self._isnan():
             # No localisations
@@ -214,11 +165,12 @@ class SR_fit(object):
         for clu in self.clusterlist:
             setattr(clu, 'ecc', self.props[clu.num-1]['eccentricity'])
             setattr(clu, 'flattening', 1 - np.sqrt(1 - clu.ecc**2))
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            self.ave_ecc = np.nanmean([clu.ecc for clu in self.clusterlist])
-            self.ave_flattening = np.nanmean([clu.flattening for clu in self.clusterlist])
-
+            
+        self.to_summary['Average_cluster_eccentricity'] = self.mean_cluattr(
+         'ecc', 'Eccentricity')
+        self.to_summary['Average_cluster_flattening'] = self.mean_cluattr(
+         'flattening', 'Flattening')
+   
     def convexhull_meausure(self):    
         '''
         Calculate the area of all clusters' convex hull
@@ -235,16 +187,39 @@ class SR_fit(object):
         self._regionprops()
         scale = self.pixel_size/self.sr_scale
         for clu in self.clusterlist:
-            setattr(clu, 'nm2_area', self.props[clu.num-1]['convex_area']*(scale**2))
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            self.ave_area = np.nanmean([clu.nm2_area for clu in self.clusterlist])
-            self.ave_density_2D = np.nanmean([clu.loc_num / clu.nm2_area for 
-                                            clu in self.clusterlist])
+            setattr(clu, 'convex_area', self.props[clu.num-1]['convex_area']*(scale**2))
+        self.to_summary['Average_length'] = self.mean_cluattr(
+         'convex_area', 'Convex_area')  
             
     def update_ID(self, keystring):
         self.fit_ID = keystring
+        self.to_summary['Analysis_ID'] = keystring
+    
+    def update_peakfitinfo(self):
+        '''
+        Save the information of the images gained from peak fit.
+        '''
+        self.to_summary['Raw_loc_number'] = len(self.df)
+        self.to_summary['Frame_number'] = self.framenum
+        try:
+            self.to_summary['BG_level'].append(
+             self.output_attr_fromfile('median_intensity.txt'))
+        except:
+            pass
         
+        try:
+            self.to_summary['Corrected_precision'].append(
+             self.output_attr_fromfile('corrected_precision.txt'))
+        except:
+            pass
+            
+        if 'Fiducials.txt' in os.listdir(self.root):
+            fid_file = op.join(self.root, 'Fiducials.txt')
+            feus = pd.read_table(fid_file).values
+            self.to_summary['Fiducials_number'] = len(feus)
+        else:
+            self.to_summary['Fiducials_number'] = 0
+               
     def labelled_cluster(self):
         if self._isnan():
             # No localisations
@@ -254,68 +229,156 @@ class SR_fit(object):
             for clu in self.clusterlist])
         roi_file = op.join(self.results_root, 'clusters_roi.txt')
         roi.to_csv(roi_file, index=False)
-             
+        
+    def temporal_grouping(self, dThresh=20, min_loc=2, max_mol_area=float('inf'),
+     tThresh=2500, min_frame=2, min_burst=1, min_on_prop=0):
+        '''
+        New in version 3.5. Conduct a spatial and temporal grouping to identify
+        individual binding events.
+        '''
+        df_ = self.df.copy()
+        fit_xy = df_[['X', 'Y']].values.astype('float64')
+        
+        SUBPIXEL = self.pixel_size/self.sr_scale
+        tThresh_frame = tThresh/self.frame_length/1000
+        dThresh_pixel = dThresh/self.pixel_size
+        
+        # spatial grouping at molecular scale (dThresh ~ precision)
+        db = DBSCAN(eps=dThresh_pixel, min_samples=min_loc).fit(fit_xy) 
+        
+        df_['Molecule_ID'] = db.labels_ + 1
+        clu_num = max(db.labels_) + 1
+        burst_df = []
+        track_save = []
+        
+        for i in range(1, clu_num+1):
+            track = df_[df_['Molecule_ID'] == i].copy()
+            try:
+                mol_area = ConvexHull(track[['X','Y']].values).area*(self.pixel_size**2)
+            except scipy.spatial.qhull.QhullError:
+                mol_area = SUBPIXEL**2 # subpixel area
+            if mol_area > max_mol_area: # max_mol_area filters out overlapping molecules (inspired by Dave!)
+                continue
+                
+            fit_t = track['Frame'].values.reshape(-1, 1)
+            dbt = DBSCAN(eps=tThresh_frame, min_samples=min_frame).fit(fit_t)
+            burst_num = max(dbt.labels_) + 1
+            if burst_num < min_burst: # min_burst filters out orphan events
+                continue
+            track['Burst_ID'] = dbt.labels_ + 1
+            start = 1
+            
+            for b, charas in track.groupby('Burst_ID'):
+                if b == 0: continue # Non-clustered events
+                burst = charas.mean()
+                burst['ON_time'] = len(charas)*self.frame_length # The actual ON time (excluding blinking time)
+                burst['ON_span'] = (max(charas['Frame'])-min(charas['Frame'])+1)*self.frame_length # The apparent ON time (including blinking time)
+                burst['ON_prop'] = burst['ON_time']/burst['ON_span']
+                if burst['ON_prop'] < min_on_prop: # min_on_prop filters out 'fake' bursts that simply join orphans
+                    continue
+                burst['OFF_time'] = (min(charas['Frame'])-start)*self.frame_length
+                if burst['OFF_time'] == 0: burst['OFF_time'] = np.nan # The dark time between last and this blink
+                burst['Area'] = mol_area
+                start = max(charas['Frame']) + 1
+                burst_df.append(burst)
+                
+            track_save.append(track)
+        pd.concat(track_save, ignore_index=True).to_csv(op.join(
+         self.results_root, 'temporal_grouping.csv'), index=False)
+        self.burst_df = DF(burst_df)
+        
+        mol_df = []
+        for m, charas in self.burst_df.groupby('Molecule_ID'):
+            mol = charas.mean(skipna=True)
+            mol['ON_time'] = charas['ON_time'].sum()
+            mol['ON_span'] = charas['ON_span'].sum()
+            mol['OFF_time'] = charas['OFF_time'].sum(skipna=True)
+            mol['Burst_number'] = len(charas)
+            mol_df.append(mol)
+        self.burst_df = self.burst_df.astype({'Frame':int, 'origX':int, 'origY':int})
+        self.mol_df = DF(mol_df).astype({'Frame':int, 'origX':int, 'origY':int})
+        
+        # Save results in self.to_summary
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            self.to_summary['Average_burst_time'] = np.nanmean(self.burst_df['ON_time'])
+            self.to_summary['Average_burst_span'] = np.nanmean(self.burst_df['ON_span'])
+            self.to_summary['Average_burst_prop'] = np.nanmean(self.burst_df['ON_prop'])
+            self.to_summary['Average_burst_darktime'] = np.nanmean(self.burst_df['OFF_time'])
+            self.to_summary['Average_burst_precision'] = np.nanmean(self.burst_df['Precision (nm)'])
+            self.to_summary['Average_mol_burstnum'] = np.nanmean(self.mol_df['Burst_number'])
+            self.to_summary['Average_mol_area'] = np.nanmean(self.mol_df['Area'])
+                   
     # Output methods
-    def save_with_header(self, **kwargs):
+    def save_with_header(self, subj=None, **kwargs):
         if self._isnan():
             # No localisations
             return
+            
+        if subj == 'burst':
+            try: df = self.burst_df.copy()
+            except: return
+        elif subj == 'mol':
+            try: df = self.mol_df.copy()
+            except: return
+        elif subj == 'cluster':
+            try: df = self.df.copy()
+            except: return
+        else:
+            return 
 
-        hf = op.join(self.results_root, 'All_fits_with_header_py.txt')
-        to_output = self.df.drop(columns=['Source', 'Cluster', 'SNR', 'Precision (nm)'], errors='ignore')
+        hf = op.join(self.results_root, 'All_{}_header.txt'.format(subj))
+        to_output = df.drop(columns=['Source', 'Molecule_ID', 'Burst_ID', 
+         'ON_time', 'ON_span', 'ON_prop', 'OFF_time', 'Burst_number', 'Area',
+         'Cluster', 'SNR', 'Precision (nm)'], errors='ignore')
         if self.version == 2:
-            to_output = to_output.rename(columns={"T": "Frame"})
+            to_output = to_output.rename(columns={'X': 'X (px)', 'Y':'Y (px)'})
             to_output['Z (px)'] = 0
         to_output.to_csv(hf, sep = '\t',  index = False)
         with open(hf, 'r+') as log:
             content = log.read()
             log.seek(0)
             log.write(self.header + '#' + content)
-                
-    def loc_num(self):
-        return len(self.df)
         
     def cluster_num(self):
         if hasattr(self, 'clusterlist'):
             return len(self.clusterlist)
         else:
             return 0
+                
+    def output_histogram(self, subj):
+        '''
+        Output the histogram for subj, either bursts, molecules or clusters
+        add Analysis_ID and save in the result folder
+        '''
+
+        if subj == 'burst':
+            to_save = self.burst_df[['Molecule_ID', 'Burst_ID', 'ON_time', 
+            'ON_span', 'ON_prop', 'OFF_time', 'Area', 'Frame', 
+            'origValue', 'Precision (nm)']].copy()
+        elif subj == 'mol':
+            to_save = self.mol_df[['Molecule_ID', 'ON_time', 
+            'ON_span', 'ON_prop', 'OFF_time', 'Burst_number', 'Area', 'Frame', 
+            'origValue', 'Precision (nm)']].copy()
+        elif subj == 'cluster':
+            to_save = DF(self.all_cluster_info)
+        else:
+            return None
+        to_save['Analysis_ID'] = self.fit_ID
+        to_save.to_csv(op.join(self.results_root, 'All_{}_info.csv'.format(
+         subj)), index=False) 
+            
+        return to_save
         
-    def ave_cluster_locnum(self):
+    def mean_cluattr(self, attr, title):
+        '''
+        Calculate the mean value of the attribute and save it as histograms
+        '''
+        all_attr = [getattr(clu, attr) for clu in self.clusterlist]
+        self.all_cluster_info[title] = Series(all_attr)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
-            if hasattr(self, 'clusterlist'):
-                return np.nanmean(self.output_histogram('loc_num'))
-            else:
-                return np.nan
-            
-    def output_histogram(self, attr):
-        List_of_attr = []
-        if hasattr(self, 'clusterlist'):
-            for clu in self.clusterlist:
-                assert hasattr(clu, attr)
-                List_of_attr.append(getattr(clu, attr))
-        return List_of_attr
-        
-    def output_noncluster_histogram(self, attr):
-        List_of_attr = []
-        List_of_clusternum = []
-        if hasattr(self, 'clusterlist'):
-            for clu in self.clusterlist:
-                assert hasattr(clu, attr)
-                attrlist = getattr(clu, attr)
-                List_of_attr += attrlist
-                List_of_clusternum += [clu.num]*len(attrlist)
-        return List_of_clusternum, List_of_attr
-        
-    def output_attr_fromfile(self, attrfile):
-        attrpath = op.join(self.root, attrfile)
-        if not op.isfile(attrpath):
-            return np.nan
-        else:
-            with open(attrpath, 'r') as f:
-                attr = float(f.read())
-            return attr
+            return np.nanmean(all_attr)  
         
     # Private methods
     def _isnan(self):
@@ -325,23 +388,27 @@ class SR_fit(object):
             return True
         else:
             return False
-
             
-    def _cluster_analysis(self, epsilon, min_samples):
+    def _cluster_analysis(self, cluster_subject='loc', DBSCAN_eps_nm=100, 
+         DBSCAN_min_samples=5):
         '''
         Do DBSCAN cluster analysis on the dataframe.
         This method is only called inside the class because it is essential 
         to all the following analysis.
         
-        '''        
-        if self.version == 1:
-            fit_xy = self.df[['X', 'Y']].values
-        else:
-            fit_xy = self.df[['X (px)', 'Y (px)']].values
-        db = DBSCAN(eps=epsilon, min_samples=min_samples).fit(fit_xy)
-        self.df['Cluster'] = db.labels_ + 1  # Start labelling with 1, makes analysis easier
+        '''
+        if cluster_subject == 'mol': # for PAINT
+            self.df = self.mol_df
+        elif cluster_subject == 'burst': # for STORM/PALM
+            self.df = self.burst_df 
+        else: # default: localisation
+            pass # self.df contains all localisations
 
-            
+        fit_xy = self.df[['X', 'Y']].values
+
+        db = DBSCAN(eps=(DBSCAN_eps_nm/self.pixel_size), min_samples=DBSCAN_min_samples).fit(fit_xy)
+        self.df['Cluster'] = db.labels_ + 1  # Start labelling with 1, makes analysis easier
+ 
     def _cluster_dict(self):
         '''
         Create a cluster number -> cluster_track object dictionary.
@@ -424,7 +491,16 @@ class SR_fit(object):
                 pos = tuple(xy)
                 labelled_image[pos] = clu.num
         return labelled_image.astype('int')        
-      
+    
+    def summarise(self):
+        '''
+        Output method for summarising the clusters, return the results and also
+        save it within the result folder.
+        '''
+        with open(op.join(self.results_root, 'to_summary.txt'), 'w') as s:
+            json.dump(self.to_summary, s, indent=2)
+        return self.to_summary
+        
     @classmethod
     def _parse_xml(cls, source_string, kw):
         '''
@@ -432,7 +508,6 @@ class SR_fit(object):
         imageJ GDSC SMLM metadata xml file.
         
         '''
-        
         flag = True
         try:
             to_extract = source_string.split('</{}>'.format(kw))[0].split(
@@ -461,31 +536,31 @@ class SR_fit(object):
         
 class cluster_track(object):
     '''
-    This class stores information associated with a localisation cluster
+    This class stores information associated with a DBSCAN cluster
     
     '''
     
-    def __init__(self, num, df):
+    def __init__(self, num, subj, framelen, df):
         self.num = num
         self.df = df
         self.loc_num = len(df)
-        try:
-            self.frames = np.array(df.Frame)
-        except:
-            self.frames = np.array(df['T'])
-        self.frames.sort()        # sort the frame numbers
+                
+        if subj == 'mol': # for PAINT
+            self.mol_num = len(df)
+            self.burst_num = sum(df['Burst_number'])
+            self.loc_num = sum(df['ON_time'])/framelen
+        elif subj == 'burst': # for STORM/PALM
+            self.mol_num = len(df['Molecule_ID'].drop_duplicates())
+            self.burst_num = len(df)
+            self.loc_num = sum(df['ON_time'])/framelen
+        else: # legacy: localisation
+            self.loc_num = len(df)
     
     def bbox(self):
-        try:
-            a = self.df[['X','Y']]
-            box = np.min(a['X']), np.min(a['Y']), \
-             np.max(a['X'])-np.min(a['X']), \
-             np.max(a['Y'])-np.min(a['Y'])
-        except:
-            a = self.df[['X (px)','Y (px)']]
-            box = np.min(a['X (px)']), np.min(a['Y (px)']), \
-            np.max(a['X (px)'])-np.min(a['X (px)']), \
-            np.max(a['Y (px)'])-np.min(a['Y (px)'])
+        a = self.df[['X','Y']]
+        box = np.min(a['X']), np.min(a['Y']), \
+            np.max(a['X'])-np.min(a['X']), \
+            np.max(a['Y'])-np.min(a['Y'])
         return np.array(box)
         
     def update_num(self, update_dict):
@@ -498,103 +573,12 @@ class cluster_track(object):
         
         '''
         if not hasattr(self, 'skele'):
-            try:
-                self.skele = DF(columns=['X','Y'])
-            except:
-                self.skele = DF(columns=['X (px)','Y (px)'])
+            self.skele = DF(columns=['X','Y'])
+
         self.skele = self.skele.append({'X':skele_xy[0], 'Y':skele_xy[1]}, ignore_index=True)
         
     def xy_coordinates(self):
-        try:
-            v = self.df[['X','Y']].values
-        except:
-            v = self.df[['X (px)','Y (px)']].values
-        return v
-  
-    def burst_profile(self, fill_gap, frame_length, remove_single = True):
-        '''
-        Generate time profile of the burst track at a certain fill_gap
-        fill_gap: the minimum number of frames between each burst
-        remove_single: if Ture, remove the burst that has only one frame
-        
-        ''' 
-        F = self.frames
-        worktrack = [0]  # label the burst each element in F belongs to
-        burst = 0
-        for i in range(1, len(F)):
-            if (F[i] - F[i-1]) < fill_gap:  # Fill in the gap between the frames 
-                worktrack.append(burst)
-            else:
-                burst += 1
-                worktrack.append(burst)
-        self.burstnum = burst + 1
-        worktrack = Series(worktrack)
-        bursts = {}     # store the #burst -> burstlength details
-        burstframes = OrderedDict()
-        for i in range(burst + 1):
-            rangeburst = worktrack[worktrack == i].index
-            lenburst = F[rangeburst.max()] - F[rangeburst.min()] + 1
-            bursts[i] = lenburst
-            burstframes[i] = (F[rangeburst.min()], F[rangeburst.max()])
-        self.allburstframe = burstframes
-
-        if remove_single:  # bursts that last only one frame are most likely to 
-                            # be camera noises
-            temp_dict = bursts.copy()
-            for numburst, lenburst in bursts.items():
-                if lenburst <= 1:                                          
-                    del temp_dict[numburst]
-                    del self.allburstframe[numburst]
-            bursts = temp_dict.copy()
-        self.alllen = [frame_length*l for l in bursts.values()]
-        if bursts == {}: 
-            self.ave_burstlen = np.nan
-            self.burstnum = 0
-            return
-        # elif sum(self.alllen) > 2000:
-        #     self.ave_burstlen = 0
-        #     self.burstnum = 0
-        #     self.avgdark = 0
-        #     self.lighttodark = 0
-        #     print("Constant burst detected, possibly a fiducial marker. The position is X = %d, Y = %d" %self.positions)
-        #     return None
-        self.burstnum = len(self.alllen)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            self.ave_burstlen = np.nanmean(self.alllen)
-        
-    def burst_analysis(self, fill_gap, max_frame, frame_length, remove_single = True):
-        '''
-        Measure the burst number, burst length, dark number, dark length
-        of each track.
-        
-        '''
-        
-        self.burst_profile(fill_gap=fill_gap, frame_length=frame_length, 
-            remove_single=remove_single)
-        darkwork = []
-        if self.burstnum == 0: 
-            self.lighttodark = np.nan
-            self.ave_darklen = np.nan
-            self.alldarklen = []
-            return
-        for k, v in self.allburstframe.items():
-            darkwork.append(v[0])
-            darkwork.append(v[1])
-        darkwork = [0] + darkwork + [max_frame + 1]
-        # generate the dark begin and end
-        alldark = [darkwork[i:i+2] for i in range(0, len(darkwork),2)] 
-        # the number of dark frame is end - begin - 1
-        self.alldarklen = [frame_length*(i[1] - i[0] - 1)
-                            for i in alldark if i[1] != (i[0] + 1)]          
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            self.ave_darklen = np.nanmean(self.alldarklen)
-        # self.darknum = len(self.alldarklen)
-        if self.ave_darklen != 0:
-            self.lighttodark = float(self.ave_burstlen)/self.ave_darklen
-        else:
-            self.lighttodark = float(max_frame)     
+        return self.df[['X','Y']].values 
         
     def length_measure(self, scale):
         '''
@@ -602,8 +586,6 @@ class cluster_track(object):
         Return the length in scaled pixels
         
         '''
-        
-        #assert hasattr(self, 'skele'), "Run skeletonisation before measuring length!"
         length = 0             
    
         try: # skip arrays with no sample
@@ -618,34 +600,3 @@ class cluster_track(object):
             length = length/2 + 1
         self.nm_length = length*scale
 
-#     def intensity_profile(self, max_frame):
-#         multidots = {}
-#         for f, g in [(_, g) for _, g in self.intensityprofile.groupby('Frame') if len(g) > 1]:
-#             multidots[f] = g['origValue'].mean()
-#         to_graph = self.intensityprofile[self.intensityprofile.Frame.map(lambda x: x not in multidots.keys())].copy()
-#         for keys, values in multidots.items():
-#             to_graph.append({'Frame':keys, 'origValue':values}, ignore_index=True)
-#         for f in range(max_frame + 1):
-#             if f not in to_graph.Frame.values:
-#                 to_graph = to_graph.append({'Frame':f, 'origValue':0}, ignore_index=True)
-#         to_graph.sort_values(by='Frame', inplace=True)
-#         
-#         temp = 0
-#         filldict = {}
-#         for index, row in to_graph.iterrows():
-#             if row['origValue'] != -1:
-#                 temp = row['origValue']
-#             else:
-#                 filldict[row['Frame']] = temp
-#         to_graph_fill = to_graph[to_graph.Frame.map(lambda x: x not in filldict.keys())].copy()
-#         for keys, values in filldict.items():
-#             to_graph_fill = to_graph_fill.append({'Frame':keys, 'origValue':values}, ignore_index=True)
-#         to_graph_fill.sort_values(by='Frame', inplace=True)
-#         to_graph_fill.plot(x='Frame', y='origValue', kind='line', linewidth=1, color='r', figsize=(30,10))
-#         plt.title('Trace at x={}, y={}'.format(int(self.X), int(self.Y)))
-#         # to_graph.to_csv(os.path.join(savepath, 'fill_gap_raw.csv'), index=False)
-#         # plt.savefig(os.path.join(savepath, 'fill_gap.pdf'), format='pdf')
-#         plt.close()
-# 
-#         return to_graph, to_graph_fill
-        
