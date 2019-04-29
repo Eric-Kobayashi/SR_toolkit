@@ -240,6 +240,10 @@ class SR_fit(object):
         New in version 3.5. Conduct a spatial and temporal grouping to identify
         individual binding events.
         '''
+        if self._empty or not self._isfit:
+            # No localisations
+            return
+
         df_ = self.df.copy()
         fit_xy = df_[['X', 'Y']].values.astype('float64')
         
@@ -287,8 +291,12 @@ class SR_fit(object):
                 burst_df.append(burst)
                 
             track_save.append(track)
-        pd.concat(track_save, ignore_index=True).to_csv(op.join(
-         self.results_root, 'temporal_grouping.csv'), index=False)
+        try:
+            pd.concat(track_save, ignore_index=True).to_csv(op.join(
+            self.results_root, 'temporal_grouping.csv'), index=False)
+        except ValueError:
+            self._empty = True
+            return
         self.burst_df = DF(burst_df)
         
         mol_df = []
