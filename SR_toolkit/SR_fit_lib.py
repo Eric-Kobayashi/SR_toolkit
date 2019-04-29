@@ -43,6 +43,8 @@ class SR_fit(object):
         with open(filepath, 'w') as f:
             f.write(contents.replace('*',''))
 
+        self.to_summary = {}         # initialise output
+
         try:
             self.df = pd.read_table(filepath)       # default delimitor: space
             if len(self.df.columns) <= 2:    # if it is a comma delimitor file
@@ -56,7 +58,6 @@ class SR_fit(object):
             return
         self._empty = False
         
-        self.to_summary = {}         # initialise output
         # For compatibility with GDSC SMLM 2
         self.df = self.df.rename(columns={'T':'Frame', 'X (px)':'X', 'Y (px)':'Y'})
         
@@ -199,7 +200,10 @@ class SR_fit(object):
         '''
         Save the information of the images gained from peak fit.
         '''
-        self.to_summary['Raw_loc_number'] = len(self.df)
+        if self._isnan():
+            self.to_summary['Raw_loc_number'] = 0
+        else:
+            self.to_summary['Raw_loc_number'] = len(self.df)
         self.to_summary['Frame_number'] = self.framenum
         try:
             self.to_summary['BG_level'].append(

@@ -6,11 +6,11 @@ from subprocess import call
 
 if __name__ == '__main__':
     # Here is where the script folder will be
-    setup_path = r"C:\Users\Eric\Python_Library\SR_toolkit"
+    setup_path = r"C:\Users\Public\Documents\Python Scripts\SR_toolkit"
     
     # Put imageJ path here
-    imageJ_GDSCSMLM1_path = r"C:\Users\Eric\Documents\fiji-win64\Fiji.app\ImageJ-win64.exe"
-    imageJ_GDSCSMLM2_path = r"C:\Users\Eric\Documents\fiji-win64-GDSCSMLM2\Fiji.app\ImageJ-win64.exe"
+    imageJ_GDSCSMLM1_path = r"C:\Users\Eric\fiji-win64\Fiji.app\ImageJ-win64.exe"
+    imageJ_GDSCSMLM2_path = r"C:\Users\Public\Documents\fiji-win64-GDSCSMLM2\Fiji.app\ImageJ-win64.exe"
     
     # ======= setup code, no need to change =======
     if op.isdir(setup_path) and op.basename(setup_path) == 'SR_toolkit':
