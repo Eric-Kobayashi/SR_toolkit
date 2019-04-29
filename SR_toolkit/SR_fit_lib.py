@@ -93,7 +93,7 @@ class SR_fit(object):
         Extract information from the cluster analysis results.        
         '''
         
-        if not self._isfit or self._empty:
+        if self._isnan():
             # No localisations
             return
         
@@ -140,6 +140,8 @@ class SR_fit(object):
         try: self.to_summary['Average_cluster_molnum'] = self.mean_cluattr(
              'mol_num', 'Num_molecule')
         except: pass
+        
+        self.to_summary['Number_of_cluster'] = clu_num - 1
       
     def length_measure(self, algorithm='blur', sigma=2):
         if self._isnan():
@@ -240,7 +242,7 @@ class SR_fit(object):
         New in version 3.5. Conduct a spatial and temporal grouping to identify
         individual binding events.
         '''
-        if self._empty or not self._isfit:
+        if self._isnan():
             # No localisations
             return
 
@@ -313,6 +315,8 @@ class SR_fit(object):
         # Save results in self.to_summary
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
+            self.to_summary['Total_burstnum'] = len(self.burst_df)
+            self.to_summary['Total_molnum'] = len(self.mol_df)
             self.to_summary['Average_burst_time'] = np.nanmean(self.burst_df['ON_time'])
             self.to_summary['Average_burst_span'] = np.nanmean(self.burst_df['ON_span'])
             self.to_summary['Average_burst_prop'] = np.nanmean(self.burst_df['ON_prop'])
@@ -394,12 +398,18 @@ class SR_fit(object):
         
     # Private methods
     def _isnan(self):
-        if not self._isfit or self._empty or not hasattr(self, 'clusterlist'):
-            return True
-        elif len(self.clusterlist) == 0:
-            return True
+        if not hasattr(self, '_clustered'):
+            if not self._isfit or self._empty:
+                return True
+            else:
+                return False
         else:
-            return False
+            if not self._isfit or self._empty or not hasattr(self, 'clusterlist'):
+                return True
+            elif not self._clustered or len(self.clusterlist) == 0:
+                return True
+            else:
+                return False
             
     def _cluster_analysis(self, cluster_subject='loc', DBSCAN_eps_nm=100, 
          DBSCAN_min_samples=5):
