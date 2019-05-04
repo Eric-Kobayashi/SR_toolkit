@@ -155,7 +155,7 @@ class SR_fit(object):
             for clu in self.clusterlist:
                 clu.length_measure(self.pixel_size/self.sr_scale)
         
-        self.to_summary['Average_length'] = self.mean_cluattr(
+        self.to_summary['Average_cluster_length'] = self.mean_cluattr(
          'nm_length', 'Length')    
                            
     def eccentricity_measure(self):
@@ -191,7 +191,7 @@ class SR_fit(object):
         scale = self.pixel_size/self.sr_scale
         for clu in self.clusterlist:
             setattr(clu, 'convex_area', self.props[clu.num-1]['convex_area']*(scale**2))
-        self.to_summary['Average_length'] = self.mean_cluattr(
+        self.to_summary['Average_cluster_area'] = self.mean_cluattr(
          'convex_area', 'Convex_area')  
             
     def update_ID(self, keystring):
