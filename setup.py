@@ -21,7 +21,7 @@ if __name__ == '__main__':
         setup_path = op.join(setup_path, 'SR_toolkit')
     script_path = os.path.dirname(os.path.abspath(__file__))
     sh.copytree(op.join(script_path, 'SR_toolkit'), setup_path)
-    if setup_path not in os.getenv('PYTHONPATH'):
+    if os.getenv('PYTHONPATH') is None or setup_path not in os.getenv('PYTHONPATH'):
         call('setx PYTHONPATH "{}"'.format(setup_path))
     
     config_file = {}

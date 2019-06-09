@@ -46,7 +46,7 @@ def mainfunc():
     # ==== Parameters for cluster analysis and measurements ====
     'fitresults_file_name': 'default', # default: 'FitResults.txt' or 'FitResults_FeuRemoved.txt' if fiducial corrected
     'temporal_grouping': {'run': True, 'dThresh':20, 'min_loc':2, 'max_mol_area':float('inf'),
-     'tThresh':2500, 'min_frame':2, 'min_burst':2, 'min_on_prop':0.0},
+     'tThresh':2500, 'min_frame':1, 'min_burst':2, 'min_on_prop':0.0},
      # dThresh - nm, max_mol_area - nm2, tThresh - ms
     'cluster_analysis': {'run': True, 'cluster_subject':'burst', # burst, mol, loc
     'DBSCAN_eps_nm':200, 'DBSCAN_min_samples':2},

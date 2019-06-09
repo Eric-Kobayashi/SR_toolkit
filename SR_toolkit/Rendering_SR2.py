@@ -25,6 +25,7 @@ if __name__ in ['__builtin__', '__main__']:
 					List_of_fits.append((roots, f))
 		
 		for r, f in List_of_fits:
+			IJ.run("Close All")
 			fitresults = op.join(r, f)
 			try:
 				IJ.redirectErrorMessages()
@@ -34,8 +35,18 @@ if __name__ in ['__builtin__', '__main__']:
 				"table_precision=4 equalised image_scale="+str(sr_scale))
 			except:
 				continue
-			wm.getWindow("Fit Results").close()
-			sr = wm.getImage("Image (LVM LSE) SuperRes")
+			try:
+				IJ.redirectErrorMessages()
+				wm.getWindow("Fit Results").close()
+			except:
+				pass
+
+			try:
+				IJ.redirectErrorMessages()
+				sr = wm.getImage("Image (LSE) SuperRes")
+			except:
+				continue
+				
 			if to_fit == 'cluster':
 				try:
 					roi_file = op.join(r, 'clusters_roi.txt')
@@ -60,7 +71,12 @@ if __name__ in ['__builtin__', '__main__']:
 					rm.reset()
 				except:
 					pass
-			IJ.saveAs(sr, "Tiff", op.join(r, "{}_SR.srf.tif".format(to_fit)))
+			try:
+				IJ.redirectErrorMessages()
+				IJ.saveAs(sr, "Tiff", op.join(r, "{}_SR.srf.tif".format(to_fit)))
+			except:
+				continue
+				
 			IJ.run("Close All")
 
 
