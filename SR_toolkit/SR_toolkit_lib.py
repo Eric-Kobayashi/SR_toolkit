@@ -303,8 +303,10 @@ class Analysis(object):
             self.fit_name = kwargs['fitresults_file_name']
         else:
             # Remove fiducials
-            if kwargs['fiducial_correction']['run']:
+            if kwargs['fiducial_correction']['run'] and kwargs['fiducial_correction']['fid_file'] != 'drift':
                 self._remove_fid(**kwargs)
+            elif kwargs['fiducial_correction']['run'] and kwargs['fiducial_correction']['fid_file'] == 'drift':
+                self.fit_name = 'FitResults_Corrected.txt'
                 
         self._search_fitresults()
         assert self.n_fit > 0, 'No fit results files found!\n'

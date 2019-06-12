@@ -119,6 +119,48 @@ def Find_fidicials(directory, fid_brightness, fid_size, fid_last_time):
 			imp.killRoi()
 		return True
 		
+def Correct_fidicials_with_drift(img_dir, directory, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing):	
+	fit_name = "FitResults_Corrected.txt"
+	IJ.run("Clear Memory Results", "All")
+	fitresultfile = op.join(directory, "Image.results.xls")
+	IJ.redirectErrorMessages()
+	IJ.run("Results Manager", "coordinate=["+
+	fitresultfile+"] input=File input_file=["+fitresultfile+"] results_table=Uncalibrated "+
+	"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
+	"image_scale="+str(sr_scale)+" image_window=0 results_in_memory")
+	drift_file = op.join(directory, "Drift.txt")
+	try:
+		sh.copyfile(op.join(img_dir, "Drift.txt"), drift_file)
+	except:
+		IJ.run("Close All", "")
+		return False
+	try:
+		IJ.redirectErrorMessages()
+		IJ.run("Drift Calculator", "input=[Image (LSE)] method=[Drift File] "+
+		"max_iterations=50 relative_error=0.010 smoothing="+str(smoothing_para)+
+		" {}".format("limit_smoothing " if limit_smoothing else "")+
+		"min_smoothing_points=10 max_smoothing_points=50 smoothing_iterations=1 "+
+		"plot_drift update_method=[New dataset] save_drift "+
+		"drift_file=["+drift_file+"]")
+	except:
+		IJ.run("Close All", "")
+		return False
+
+	if not op.isfile(drift_file):
+		IJ.run("Close All", "")
+		return False
+		
+	wm.getWindow("Fit Results").close()
+	IJ.redirectErrorMessages()
+	IJ.run("Results Manager", "input=[Image (LSE) (Corrected)]  results_table=Uncalibrated "+
+	"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
+	"image_scale="+str(sr_scale)+" image_window=0 results_file=[] results_in_memory")
+
+	IJ.selectWindow("Fit Results")
+	IJ.saveAs("text", op.join(directory, fit_name))
+	IJ.run("Close All", "")
+	return True
+		
 def Correct_fidicials_with_fid(img_dir, directory, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing):
 	xylist = []
 	fid_file = op.join(img_dir, "Fiducials.txt")
@@ -314,7 +356,7 @@ if __name__ in ['__builtin__', '__main__']:
 			log_dict[img]['GDSC_SMLM'] = 'Error: {}'.format(e) # GDSC_SMLM peakfit failed
 		else:
 			if run_fidicial_correction:
-				if fid_file:
+				if fid_file is True:
 					try:
 						flag = Correct_fidicials_with_fid(r, mydir, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing)
 						if not flag:
@@ -323,6 +365,16 @@ if __name__ in ['__builtin__', '__main__']:
 					except Exception as e:
 						log_dict[img] = {}
 						log_dict[img]['Fiducials'] = 'Error: {}'.format(e) # Correct fiducials failed
+				elif fid_file == 'drift':
+					try:
+						flag = Correct_fidicials_with_drift(r, mydir, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing)
+						if not flag:
+							log_dict[img] = {}
+							log_dict[img]['Fiducials'] = 'none' # No fiducials detected
+					except Exception as e:
+						log_dict[img] = {}
+						log_dict[img]['Fiducials'] = 'Error: {}'.format(e) # Correct fiducials failed
+
 				else:
 					try:
 						flag = Find_fidicials(mydir, fid_brightness, fid_size, fid_last_time)
