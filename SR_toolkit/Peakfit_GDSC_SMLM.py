@@ -158,6 +158,8 @@ def Correct_fidicials_with_drift(img_dir, directory, sr_scale, w, h, fid_size, s
 
 	IJ.selectWindow("Fit Results")
 	IJ.saveAs("text", op.join(directory, fit_name))
+	IJ.selectWindow("Image (LSE) (Corrected) SuperRes")
+	IJ.saveAs("Tiff", op.join(directory, "Corrected_RawSR.srf.tif"))
 	IJ.run("Close All", "")
 	return True
 		
@@ -217,6 +219,8 @@ def Correct_fidicials_with_fid(img_dir, directory, sr_scale, w, h, fid_size, smo
 
 	IJ.selectWindow("Fit Results")
 	IJ.saveAs("text", op.join(directory, fit_name))
+	IJ.selectWindow("Image (LSE) (Corrected) SuperRes")
+	IJ.saveAs("Tiff", op.join(directory, "Corrected_RawSR.srf.tif"))
 	IJ.run("Close All", "")
 	return True
 		
@@ -255,6 +259,8 @@ def Correct_fidicials(directory, sr_scale, smoothing_para, limit_smoothing):
 
 	IJ.selectWindow("Fit Results")
 	IJ.saveAs("text", op.join(directory, fit_name))
+	IJ.selectWindow("Image (LSE) (Corrected) SuperRes")
+	IJ.saveAs("Tiff", op.join(directory, "Corrected_RawSR.srf.tif"))
 	IJ.run("Close All", "")
 	return True
 
