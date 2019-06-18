@@ -299,7 +299,7 @@ if __name__ in ['__builtin__', '__main__']:
 	L = d['filelist']
 	trim_track = d['trim_track']
 	bg_measurement = d['BG_measurement']
-	gdsc_smlm_xml = op.join(op.dirname(jsonpath), 'gdsc.smlm.settings.xml').replace('//','\\')
+	gdsc_smlm_xml = op.join(op.dirname(jsonpath), 'gdsc.smlm.settings.xml')
 	results_dir = d['results_dir']
 	pixel_size = d['pixel_size']
 	camera_bias = d['camera_bias']
