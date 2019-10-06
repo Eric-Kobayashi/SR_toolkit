@@ -475,7 +475,7 @@ if __name__ == '__main__':
     importlib.reload(SR_fit_lib)
     from SR_fit_lib import SR_fit
     
-    directory = r"C:\Users\Eric\OneDrive - University Of Cambridge\igorplay\feudicial"
+    directory = r"C:\Users\Artemisia\Downloads\test_code"
     image_condition = lambda img: img.endswith('_561.tif')  # Change conditions to search for imagestacks
     input_dict = {
     # ==== Parameters for all analysis ====
@@ -488,7 +488,7 @@ if __name__ == '__main__':
     'GDSC_SMLM_version': 1, # 1 or 2
     
     # ==== Parameters for GDSC SMLM fitting ====
-    'GDSC_SMLM_peak_fit': True, # If False, the parameters for GDSC SMLM fitting will be ignored, only cluster_analysis will be run
+    'GDSC_SMLM_peak_fit': False, # If False, the parameters for GDSC SMLM fitting will be ignored, only cluster_analysis will be run
     'trim_track': {'run': True, 'frame_number': 4000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
     'BG_measurement': {'run': True, 'correct_precision': False, 'kappa': 0.5}, # measure the background of the image_stack. (median pixel value) 
     # if correct_precision set to True, the fitting precision will be adjusted according to the background level: higher background -> higher precision threshold. kappa controls the extent of the adjustment.
@@ -504,7 +504,7 @@ if __name__ == '__main__':
     # smoothing, smoothing2 control the filter
     
     # ==== Parameters for cluster analysis and measurements ====
-    'fitresults_file_name': 'default', # default: 'FitResults.txt' or 'FitResults_FeuRemoved.txt' if fiducial corrected
+    'fitresults_file_name': 'FitResults_FeuRemoved.txt', # default: 'FitResults.txt' or 'FitResults_FeuRemoved.txt' if fiducial corrected
     
     'temporal_grouping': {'run': True, 'dThresh':20, 'min_loc':2, 'max_mol_area':float('inf'),
      'tThresh':2500, 'min_frame':2, 'min_burst':2, 'min_on_prop':0},
@@ -514,7 +514,7 @@ if __name__ == '__main__':
     'length_measure': {'run':False, 'algorithm':'close', 'sigma':2}, # algorithm: blur or close; if blur, sigma is the gaussian sigma; if close, sigma is the closing square size
     'eccentricity_measure': True ,
     'convexhull_measure': True , # measure the area of the cluster
-    'Rendering_SR': True , # rendering clustered SR images in imageJ
+    'Rendering_SR': False , # rendering clustered SR images in imageJ
     'save_histogram':True,
     }
 

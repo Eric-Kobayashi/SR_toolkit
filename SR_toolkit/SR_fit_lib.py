@@ -46,12 +46,13 @@ class SR_fit(object):
         self.to_summary = {}         # initialise output
 
         try:
-            self.df = pd.read_table(filepath)       # default delimitor: space
+            self.df = pd.read_csv(filepath, sep='\t')       # default delimitor: space
             if len(self.df.columns) <= 2:    # if it is a comma delimitor file
                 self.df = pd.read_csv(filepath)
         except:
             self._isfit = False          # Wrong filetype
             return
+        
         self._isfit = True
         if len(self.df) == 0:
             self._empty = True
@@ -299,7 +300,9 @@ class SR_fit(object):
         except ValueError:
             self._empty = True
             return
-        self.burst_df = DF(burst_df)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=np.ComplexWarning)
+            self.burst_df = DF(burst_df).astype('float64')
         
         mol_df = []
         for m, charas in self.burst_df.groupby('Molecule_ID'):
@@ -310,7 +313,9 @@ class SR_fit(object):
             mol['Burst_number'] = len(charas)
             mol_df.append(mol)
         self.burst_df = self.burst_df.astype({'Frame':int, 'origX':int, 'origY':int})
-        self.mol_df = DF(mol_df).astype({'Frame':int, 'origX':int, 'origY':int})
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=np.ComplexWarning)
+            self.mol_df = DF(mol_df).astype('float64').astype({'Frame':int, 'origX':int, 'origY':int})
         
         # Save results in self.to_summary
         with warnings.catch_warnings():
