@@ -52,7 +52,8 @@ class SR_fit(object):
         except:
             self._isfit = False          # Wrong filetype
             return
-        
+
+        self.df = self.df.astype('float64', errors='ignore')
         self._isfit = True
         if len(self.df) == 0:
             self._empty = True
