@@ -45,6 +45,7 @@ from copy import deepcopy
 from subprocess import call
 import warnings 
 import ctypes
+import uuid
 from SR_fit_lib import SR_fit
 
 class Analysis(object):
@@ -56,7 +57,7 @@ class Analysis(object):
         self.path = path
         timestring = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         self.timestring = timestring
-        self.results_dir = op.join(path, 'Analysis_'+timestring)
+        self.results_dir = op.join(path, 'Analysis_'+timestring+'_'+str(uuid.uuid4())[-4:])
         os.mkdir(self.results_dir)
         sys.stdout.write("Time: {} Analysis starts!\n\n".format(timestring))
         self.json_file = op.join(self.results_dir, 'to_imageJ.json')
