@@ -312,10 +312,10 @@ class SR_fit(object):
             mol['OFF_time'] = charas['OFF_time'].sum(skipna=True)
             mol['Burst_number'] = len(charas)
             mol_df.append(mol)
-        self.burst_df = self.burst_df.astype({'Frame':int, 'origX':int, 'origY':int})
+        self.burst_df = self.burst_df.astype({'Frame':int, 'origX':int, 'origY':int}, errors='ignore')
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=np.ComplexWarning)
-            self.mol_df = DF(mol_df).astype('float64').astype({'Frame':int, 'origX':int, 'origY':int})
+            self.mol_df = DF(mol_df).astype('float64').astype({'Frame':int, 'origX':int, 'origY':int}, errors='ignore')
         
         # Save results in self.to_summary
         with warnings.catch_warnings():
