@@ -375,13 +375,23 @@ class SR_fit(object):
         '''
 
         if subj == 'burst':
-            to_save = self.burst_df[['Molecule_ID', 'Burst_ID', 'ON_time', 
-            'ON_span', 'ON_prop', 'OFF_time', 'Area', 'Frame', 
-            'origValue', 'Precision (nm)']].copy()
+            try: # Cluster_ID exists
+                to_save = self.burst_df[['Molecule_ID', 'Burst_ID', 'Cluster_ID', 
+                'ON_time', 'ON_span', 'ON_prop', 'OFF_time', 'Area', 'Frame', 
+                'origValue', 'Precision (nm)']].copy()
+            except:
+                to_save = self.burst_df[['Molecule_ID', 'Burst_ID', 
+                'ON_time', 'ON_span', 'ON_prop', 'OFF_time', 'Area', 'Frame', 
+                'origValue', 'Precision (nm)']].copy()
         elif subj == 'mol':
-            to_save = self.mol_df[['Molecule_ID', 'ON_time', 
-            'ON_span', 'ON_prop', 'OFF_time', 'Burst_number', 'Area', 'Frame', 
-            'origValue', 'Precision (nm)']].copy()
+            try: # Cluster_ID exists
+                to_save = self.mol_df[['Molecule_ID', 'Burst_ID', 'Cluster_ID', 
+                'ON_time', 'ON_span', 'ON_prop', 'OFF_time', 'Area', 'Frame', 
+                'origValue', 'Precision (nm)']].copy()
+            except:
+                to_save = self.mol_df[['Molecule_ID', 'Burst_ID', 
+                'ON_time', 'ON_span', 'ON_prop', 'OFF_time', 'Area', 'Frame', 
+                'origValue', 'Precision (nm)']].copy()
         elif subj == 'cluster':
             to_save = DF(self.all_cluster_info)
         else:
@@ -436,7 +446,13 @@ class SR_fit(object):
 
         db = DBSCAN(eps=(DBSCAN_eps_nm/self.pixel_size), min_samples=DBSCAN_min_samples).fit(fit_xy)
         self.df['Cluster'] = db.labels_ + 1  # Start labelling with 1, makes analysis easier
- 
+
+        # Feed the cluster_ID info back into the cluster_subject df
+        if cluster_subject == 'mol': 
+            self.mol_df['Cluster_ID'] = db.labels_ + 1
+        elif cluster_subject == 'burst': 
+            self.burst_df['Cluster_ID'] = db.labels_ + 1
+
     def _cluster_dict(self):
         '''
         Create a cluster number -> cluster_track object dictionary.
