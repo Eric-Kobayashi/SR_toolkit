@@ -63,6 +63,11 @@ class SR_fit(object):
         # For compatibility with GDSC SMLM 2
         self.df = self.df.rename(columns={'T':'Frame', 'X (px)':'X', 'Y (px)':'Y'})
         
+        # Shift negative values
+        shift = (min(self.df['X'].min(), 0), min(self.df['Y'].min(), 0))
+        self.df['X'] = self.df['X'] - shift[0]
+        self.df['Y'] = self.df['Y'] - shift[1]
+        self.to_summary['xy_shift'] = shift
             
     def input_parameters(self, results_dir=None, pixel_size=None, sr_scale=8, 
      frame_length=50, GDSC_SMLM_version=1, **kwargs):
@@ -481,7 +486,7 @@ class SR_fit(object):
         
         '''
         cluster_labels = {} # Store the (x, y) -> cluster number info
-        overhead = 50 # Make extra room for fiducial corrections
+        overhead = 100 # Make extra room for fiducial corrections
         binary_image = np.zeros((self.width*self.sr_scale + overhead, 
         self.height*self.sr_scale + overhead)).astype('uint8')
         
