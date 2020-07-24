@@ -486,7 +486,7 @@ class SR_fit(object):
         
         '''
         cluster_labels = {} # Store the (x, y) -> cluster number info
-        overhead = 500 # Make extra room for fiducial corrections
+        overhead = 200 # Make extra room for fiducial corrections
         binary_image = np.zeros((self.width*self.sr_scale + overhead, 
         self.height*self.sr_scale + overhead)).astype('uint8')
         
@@ -495,7 +495,11 @@ class SR_fit(object):
             cluster_xy = (clu.xy_coordinates()*self.sr_scale).astype('int')
             for xy in cluster_xy:
                 pos = tuple(xy)
-                binary_image[pos] = 1
+                try:
+                    binary_image[pos] = 1
+                except IndexError:
+                    print('Index overflow, please check fiducial corrections at {}'.format(self.path))
+                    break
                 cluster_labels[pos] = clu.num
         if algorithm == 'close':
             closed = closing(binary_image, square(int(sigma*self.sr_scale)))
@@ -531,14 +535,17 @@ class SR_fit(object):
         '''
         
         assert hasattr(self, 'clusterlist')
-        overhead = 500 # Make extra room for fiducial corrections
+        overhead = 200 # Make extra room for fiducial corrections
         labelled_image = np.zeros((self.width*self.sr_scale + overhead, 
         self.height*self.sr_scale + overhead))
         for clu in self.clusterlist:
             cluster_xy = (clu.xy_coordinates()*self.sr_scale).astype('int')
             for xy in cluster_xy:
                 pos = tuple(xy)
-                labelled_image[pos] = clu.num
+                try:
+                    labelled_image[pos] = clu.num
+                except IndexError:
+                    break
         return labelled_image.astype('int')        
     
     def summarise(self):
