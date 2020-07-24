@@ -486,7 +486,7 @@ class SR_fit(object):
         
         '''
         cluster_labels = {} # Store the (x, y) -> cluster number info
-        overhead = 100 # Make extra room for fiducial corrections
+        overhead = 500 # Make extra room for fiducial corrections
         binary_image = np.zeros((self.width*self.sr_scale + overhead, 
         self.height*self.sr_scale + overhead)).astype('uint8')
         
@@ -531,7 +531,7 @@ class SR_fit(object):
         '''
         
         assert hasattr(self, 'clusterlist')
-        overhead = 50 # Make extra room for fiducial corrections
+        overhead = 500 # Make extra room for fiducial corrections
         labelled_image = np.zeros((self.width*self.sr_scale + overhead, 
         self.height*self.sr_scale + overhead))
         for clu in self.clusterlist:
