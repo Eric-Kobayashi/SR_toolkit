@@ -68,6 +68,8 @@ class SR_fit(object):
         self.df['X'] = self.df['X'] - shift[0]
         self.df['Y'] = self.df['Y'] - shift[1]
         self.to_summary['xy_shift'] = shift
+
+        self.overhead = 200 # For clusters that are more than 200 subpixels out of edge, remove them
             
     def input_parameters(self, results_dir=None, pixel_size=None, sr_scale=8, 
      frame_length=50, GDSC_SMLM_version=1, **kwargs):
@@ -114,9 +116,17 @@ class SR_fit(object):
          
         # Save cluster analysis result
         self.df.to_csv(cluster_analysis_file_path, index=False)
-            
-        clustered_locs = self.df[self.df.Cluster > 0]
-        self.unclustered_df = self.df[self.df.Cluster == 0]
+        
+        clustered_locs = self.df[self.df.Cluster > 0].copy()
+
+        # Remove overflown clusters due to possible fiducial correction error
+        dim_limitx = self.width + int(self.overhead/self.sr_scale)
+        dim_limity = self.height + int(self.overhead/self.sr_scale)
+        if len(clustered_locs[(clustered_locs['X'] >=dim_limitx) | (clustered_locs['Y'] >= dim_limity)]) > 0:
+            print('Index overflow, fiducial corrections may be incoorect, please check:\n{}'.format(self.path))
+            clustered_locs = clustered_locs[(clustered_locs['X'] < dim_limitx) & (clustered_locs['Y'] < dim_limity)].copy()
+
+        self.unclustered_df = self.df[~self.df.isin(clustered_locs)].copy()
         self.df = clustered_locs
         if len(clustered_locs) == 0:
             # No clustered localisations
@@ -175,7 +185,6 @@ class SR_fit(object):
         for clu in self.clusterlist:
             setattr(clu, 'ecc', self.props[clu.num-1]['eccentricity'])
             setattr(clu, 'flattening', 1 - np.sqrt(1 - clu.ecc**2))
-            
         self.to_summary['Average_cluster_eccentricity'] = self.mean_cluattr(
          'ecc', 'Eccentricity')
         self.to_summary['Average_cluster_flattening'] = self.mean_cluattr(
@@ -486,20 +495,15 @@ class SR_fit(object):
         
         '''
         cluster_labels = {} # Store the (x, y) -> cluster number info
-        overhead = 200 # Make extra room for fiducial corrections
-        binary_image = np.zeros((self.width*self.sr_scale + overhead, 
-        self.height*self.sr_scale + overhead)).astype('uint8')
+        binary_image = np.zeros((self.width*self.sr_scale + self.overhead, 
+        self.height*self.sr_scale + self.overhead)).astype('uint8')
         
         # record the labels of the cluster and generate the binoary image
         for clu in self.clusterlist:
             cluster_xy = (clu.xy_coordinates()*self.sr_scale).astype('int')
             for xy in cluster_xy:
                 pos = tuple(xy)
-                try:
-                    binary_image[pos] = 1
-                except IndexError:
-                    print('Index overflow, please check fiducial corrections at {}'.format(self.path))
-                    break
+                binary_image[pos] = 1
                 cluster_labels[pos] = clu.num
         if algorithm == 'close':
             closed = closing(binary_image, square(int(sigma*self.sr_scale)))
@@ -535,17 +539,13 @@ class SR_fit(object):
         '''
         
         assert hasattr(self, 'clusterlist')
-        overhead = 200 # Make extra room for fiducial corrections
-        labelled_image = np.zeros((self.width*self.sr_scale + overhead, 
-        self.height*self.sr_scale + overhead))
+        labelled_image = np.zeros((self.width*self.sr_scale + self.overhead, 
+        self.height*self.sr_scale + self.overhead))
         for clu in self.clusterlist:
             cluster_xy = (clu.xy_coordinates()*self.sr_scale).astype('int')
             for xy in cluster_xy:
                 pos = tuple(xy)
-                try:
-                    labelled_image[pos] = clu.num
-                except IndexError:
-                    break
+                labelled_image[pos] = clu.num
         return labelled_image.astype('int')        
     
     def summarise(self):
