@@ -317,12 +317,13 @@ class SR_fit(object):
             return
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=np.ComplexWarning)
-            self.burst_df = DF(burst_df).astype({'Frame':int, 'origX':int, 'origY':int, 
-                'origValue':float, 'Error':float, 'Noise':float, 'SNR':float,  
-                'Background':float,  'Signal':float,  'Angle':float, 'X':float,   
-                'Y':float,   'X SD':float, 'Y SD':float,'Precision (nm)':float,  
-                'Molecule_ID':int, 'Burst_ID':int,'ON_time':float, 
-                'ON_span':float, 'ON_prop':float, 'OFF_time':float,'Area':float}, errors='ignore')
+            self.burst_df = DF(burst_df).astype({'Frame':int, 'origX':int, 'origY':int})
+            # self.burst_df = DF(burst_df).astype({'Frame':int, 'origX':int, 'origY':int, 
+            #     'origValue':float, 'Error':float, 'Noise':float, 'SNR':float,  
+            #     'Background':float,  'Signal':float,  'Angle':float, 'X':float,   
+            #     'Y':float,'X SD':float, 'Y SD':float,'Precision (nm)':float,  
+            #     'Molecule_ID':int, 'Burst_ID':int,'ON_time':float, 
+            #     'ON_span':float, 'ON_prop':float, 'OFF_time':float,'Area':float}, errors='ignore')
         
         mol_df = []
         for m, charas in self.burst_df.groupby('Molecule_ID'):
@@ -335,13 +336,14 @@ class SR_fit(object):
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=np.ComplexWarning)
-            self.mol_df = DF(mol_df).astype({'Frame':int, 'origX':int, 'origY':int, 
-                'origValue':float, 'Error':float, 'Noise':float, 'SNR':float,  
-                'Background':float,  'Signal':float,  'Angle':float, 'X':float,   
-                'Y':float,   'X SD':float, 'Y SD':float,'Precision (nm)':float,  
-                'Molecule_ID':int, 'Burst_ID':int,'ON_time':float, 
-                'ON_span':float, 'ON_prop':float, 'OFF_time':float,'Area':float,
-                'Burst_number':int}, errors='ignore')
+            self.mol_df = DF(mol_df).astype({'Frame':int, 'origX':int, 'origY':int})
+            # self.mol_df = DF(mol_df).astype({'Frame':int, 'origX':int, 'origY':int, 
+            #     'origValue':float, 'Error':float, 'Noise':float, 'SNR':float,  
+            #     'Background':float,  'Signal':float,  'Angle':float, 'X':float,   
+            #     'Y':float,   'X SD':float, 'Y SD':float,'Precision (nm)':float,  
+            #     'Molecule_ID':int, 'Burst_ID':int,'ON_time':float, 
+            #     'ON_span':float, 'ON_prop':float, 'OFF_time':float,'Area':float,
+            #     'Burst_number':int}, errors='ignore')
         
         # Save results in self.to_summary
         with warnings.catch_warnings():
