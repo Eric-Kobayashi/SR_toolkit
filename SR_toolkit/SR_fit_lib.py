@@ -115,7 +115,10 @@ class SR_fit(object):
          DBSCAN_eps_nm=DBSCAN_eps_nm, DBSCAN_min_samples=DBSCAN_min_samples)
          
         # Save cluster analysis result
-        self.df.to_csv(cluster_analysis_file_path, index=False)
+        try:
+            self.df.to_csv(cluster_analysis_file_path, index=False)
+        except:
+            print(self.df)
         
         clustered_locs = self.df[self.df.Cluster > 0].copy()
 
