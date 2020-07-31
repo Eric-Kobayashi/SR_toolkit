@@ -317,7 +317,13 @@ class SR_fit(object):
             return
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=np.ComplexWarning)
-            self.burst_df = DF(burst_df).astype('float64')
+            self.burst_df = DF(burst_df).astype({'Frame':int, 'origX':int, 'origY':int, 
+                'origValue':float, 'Error':float, 'Noise':float, 'SNR':float,  
+                'Background':float,  'Signal':float,  'Angle':float, 'X':float,   
+                'Y':float,   'X SD':float, 'Y SD':float,'Precision (nm)':float,  
+                'Molecule_ID':int, 'Burst_ID':int,'ON_time':float, 
+                'ON_span':float, 'ON_prop':float, 'OFF_time':float,'Area':float,
+                'Cluster':int, 'Cluster_ID':int}, errors='ignore')
         
         mol_df = []
         for m, charas in self.burst_df.groupby('Molecule_ID'):
@@ -327,10 +333,16 @@ class SR_fit(object):
             mol['OFF_time'] = charas['OFF_time'].sum(skipna=True)
             mol['Burst_number'] = len(charas)
             mol_df.append(mol)
-        self.burst_df = self.burst_df.astype({'Frame':int, 'origX':int, 'origY':int}, errors='ignore')
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=np.ComplexWarning)
-            self.mol_df = DF(mol_df).astype('float64').astype({'Frame':int, 'origX':int, 'origY':int}, errors='ignore')
+            self.mol_df = DF(mol_df).astype({'Frame':int, 'origX':int, 'origY':int, 
+                'origValue':float, 'Error':float, 'Noise':float, 'SNR':float,  
+                'Background':float,  'Signal':float,  'Angle':float, 'X':float,   
+                'Y':float,   'X SD':float, 'Y SD':float,'Precision (nm)':float,  
+                'Molecule_ID':int, 'Burst_ID':int,'ON_time':float, 
+                'ON_span':float, 'ON_prop':float, 'OFF_time':float,'Area':float,
+                'Cluster':int, 'Cluster_ID':int}, errors='ignore')
         
         # Save results in self.to_summary
         with warnings.catch_warnings():
@@ -370,6 +382,7 @@ class SR_fit(object):
         if self.version == 2:
             to_output = to_output.rename(columns={'X': 'X (px)', 'Y':'Y (px)'})
             to_output['Z (px)'] = 0
+
         to_output.to_csv(hf, sep = '\t',  index = False)
         with open(hf, 'r+') as log:
             content = log.read()
