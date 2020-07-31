@@ -322,8 +322,7 @@ class SR_fit(object):
                 'Background':float,  'Signal':float,  'Angle':float, 'X':float,   
                 'Y':float,   'X SD':float, 'Y SD':float,'Precision (nm)':float,  
                 'Molecule_ID':int, 'Burst_ID':int,'ON_time':float, 
-                'ON_span':float, 'ON_prop':float, 'OFF_time':float,'Area':float,
-                'Cluster':int, 'Cluster_ID':int}, errors='ignore')
+                'ON_span':float, 'ON_prop':float, 'OFF_time':float,'Area':float}, errors='ignore')
         
         mol_df = []
         for m, charas in self.burst_df.groupby('Molecule_ID'):
@@ -342,7 +341,7 @@ class SR_fit(object):
                 'Y':float,   'X SD':float, 'Y SD':float,'Precision (nm)':float,  
                 'Molecule_ID':int, 'Burst_ID':int,'ON_time':float, 
                 'ON_span':float, 'ON_prop':float, 'OFF_time':float,'Area':float,
-                'Cluster':int, 'Cluster_ID':int}, errors='ignore')
+                'Burst_number':int}, errors='ignore')
         
         # Save results in self.to_summary
         with warnings.catch_warnings():
