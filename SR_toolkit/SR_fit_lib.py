@@ -502,7 +502,7 @@ class SR_fit(object):
         '''
         
         if not hasattr(self, 'props'):
-            self.props = regionprops(self._labelled_image(), coordinates='xy')
+            self.props = regionprops(self._labelled_image())
             
     def _skeletonise(self, algorithm, sigma):
         '''
