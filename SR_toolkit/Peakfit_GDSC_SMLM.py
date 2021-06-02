@@ -11,6 +11,8 @@ import ij.plugin.frame.RoiManager as RoiManager
 import ij.plugin.ZProjector as ZProjector
 import json
 from ij.plugin import SubstackMaker
+import subprocess
+import time
 
 
 def GDSC_SMLM(directory, file_name, mydir, trim_track, bg_measurement, gdsc_smlm_xml, pixel_size, camera_gain, camera_bias, frame_length, signal_strength, precision, min_photons, sr_scale):
@@ -98,6 +100,7 @@ def Find_fidicials(directory, fid_brightness, fid_size, fid_last_time):
 			imp.setRoi(x, y, 1, 1)
 			IJ.run(imp, "Add...", "value=255")
 		imp.killRoi()
+		IJ.run("Input/Output...", "jpeg=85 gif=-1 file=.txt use_file copy_row save_column")
 		IJ.run(imp, "Find Maxima...", "noise=10 output=[List]")
 		result = IJ.getTextPanel()
 		result.saveAs(op.join(directory, "Fiducials.txt"))
@@ -118,7 +121,65 @@ def Find_fidicials(directory, fid_brightness, fid_size, fid_last_time):
 			rm.addRoi(imp.getRoi())
 			imp.killRoi()
 		return True
+
+def Correct_drift_with_correlation(img_dir, directory, sr_scale, w, h, script_dir, pixel_size, bin_size, segpara, smoothing_para, limit_smoothing):	
+	fit_name = "FitResults_Corrected.txt"
+	IJ.run("Clear Memory Results", "All")
+	fitresultfile = op.join(directory, "Image.results.xls")
+	IJ.redirectErrorMessages()
+	IJ.run("Results Manager", "coordinate=["+
+	fitresultfile+"] input=File input_file=["+fitresultfile+"] results_table=Uncalibrated "+
+	"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
+	"image_scale="+str(sr_scale)+" image_window=0 results_in_memory")
+	image_size = max(w, h)
+	subprocess.call(['matlab', '-r', "cd('{}'); rundriftcorr('{}', {}, {}, {}, {})".format(script_dir, directory, segpara, image_size, pixel_size, bin_size)])
+	drift_file = op.join(directory, "RCC_Drift.txt")
+	counter = 0
+	while counter < 20:
+		if not op.isfile(drift_file):
+			counter += 1
+			time.sleep(60)
+		else:
+			break
+	try:
+		assert op.isfile(drift_file)
+	except:
+		IJ.run("Close All", "")
+		return False
+	try:
+		IJ.redirectErrorMessages()
+		IJ.run("Drift Calculator", "input=[Image (LSE)] method=[Drift File] "+
+		"max_iterations=50 relative_error=0.010 smoothing="+str(smoothing_para)+
+		" {}".format("limit_smoothing " if limit_smoothing else "")+
+		"min_smoothing_points=10 max_smoothing_points=50 smoothing_iterations=1 "+
+		"plot_drift update_method=[New dataset] save_drift "+
+		"drift_file=["+drift_file+"]")
+	except:
+		IJ.run("Close All", "")
+		return False
+
+	if not op.isfile(drift_file):
+		IJ.run("Close All", "")
+		return False
 		
+	wm.getWindow("Fit Results").close()
+	IJ.redirectErrorMessages()
+	IJ.run("Results Manager", "input=[Image (LSE) (Corrected)]  results_table=Uncalibrated "+
+	"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
+	"image_scale="+str(sr_scale)+" image_window=0 results_file=[] results_in_memory")
+
+	IJ.selectWindow("Fit Results")
+	IJ.saveAs("text", op.join(directory, fit_name))
+	IJ.selectWindow("Image (LSE) (Corrected) SuperRes")
+	IJ.saveAs("Tiff", op.join(directory, "Corrected_RawSR.srf.tif"))
+	IJ.selectWindow("Drift X")
+	IJ.saveAs("Tiff", op.join(directory, "Drift_X.tif"))
+	IJ.selectWindow("Drift Y")
+	IJ.saveAs("Tiff", op.join(directory, "Drift_Y.tif"))
+	IJ.run("Close All", "")
+	return True
+
+
 def Correct_fidicials_with_drift(img_dir, directory, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing):	
 	fit_name = "FitResults_Corrected.txt"
 	IJ.run("Clear Memory Results", "All")
@@ -160,6 +221,10 @@ def Correct_fidicials_with_drift(img_dir, directory, sr_scale, w, h, fid_size, s
 	IJ.saveAs("text", op.join(directory, fit_name))
 	IJ.selectWindow("Image (LSE) (Corrected) SuperRes")
 	IJ.saveAs("Tiff", op.join(directory, "Corrected_RawSR.srf.tif"))
+	IJ.selectWindow("Drift X")
+	IJ.saveAs("Tiff", op.join(directory, "Drift_X.tif"))
+	IJ.selectWindow("Drift Y")
+	IJ.saveAs("Tiff", op.join(directory, "Drift_Y.tif"))
 	IJ.run("Close All", "")
 	return True
 		
@@ -221,6 +286,10 @@ def Correct_fidicials_with_fid(img_dir, directory, sr_scale, w, h, fid_size, smo
 	IJ.saveAs("text", op.join(directory, fit_name))
 	IJ.selectWindow("Image (LSE) (Corrected) SuperRes")
 	IJ.saveAs("Tiff", op.join(directory, "Corrected_RawSR.srf.tif"))
+	IJ.selectWindow("Drift X")
+	IJ.saveAs("Tiff", op.join(directory, "Drift_X.tif"))
+	IJ.selectWindow("Drift Y")
+	IJ.saveAs("Tiff", op.join(directory, "Drift_Y.tif"))
 	IJ.run("Close All", "")
 	return True
 		
@@ -261,37 +330,42 @@ def Correct_fidicials(directory, sr_scale, smoothing_para, limit_smoothing):
 	IJ.saveAs("text", op.join(directory, fit_name))
 	IJ.selectWindow("Image (LSE) (Corrected) SuperRes")
 	IJ.saveAs("Tiff", op.join(directory, "Corrected_RawSR.srf.tif"))
+	IJ.selectWindow("Drift X")
+	IJ.saveAs("Tiff", op.join(directory, "Drift_X.tif"))
+	IJ.selectWindow("Drift Y")
+	IJ.saveAs("Tiff", op.join(directory, "Drift_Y.tif"))
 	IJ.run("Close All", "")
 	return True
 
-def create_image_pixel_median(img, savedir, trim_track): 
-	imp = IJ.openVirtual(img)
-	IJ.run(imp, "Hyperstack to Stack", "")
-	if trim_track['run']: # trim the stack to the required frame number
-		imp_frame = max(imp.getNSlices(), imp.getNFrames())
-		if imp_frame > trim_track['frame_number']:
-			if trim_track['from_end']:
-				start = imp_frame-trim_track['frame_number']+1
-				end = imp_frame
-			else:
-				start = 1
-				end = trim_track['frame_number']
-	ave_imp = ZProjector.run(imp, "avg", start, end)
-	stats = ave_imp.getStatistics(0x10000)
-	IJ.run("Close All", "")
-	with open(op.join(savedir, "median_intensity.txt"), 'w') as f:
-		f.write(str(stats.median))
-	return float(stats.median)
+# 
+# def create_image_pixel_median(img, savedir, trim_track): 
+# 	imp = IJ.openVirtual(img)
+# 	IJ.run(imp, "Hyperstack to Stack", "")
+# 	if trim_track['run']: # trim the stack to the required frame number
+# 		imp_frame = max(imp.getNSlices(), imp.getNFrames())
+# 		if imp_frame > trim_track['frame_number']:
+# 			if trim_track['from_end']:
+# 				start = imp_frame-trim_track['frame_number']+1
+# 				end = imp_frame
+# 			else:
+# 				start = 1
+# 				end = trim_track['frame_number']
+# 	ave_imp = ZProjector.run(imp, "avg", start, end)
+# 	stats = ave_imp.getStatistics(0x10000)
+# 	IJ.run("Close All", "")
+# 	with open(op.join(savedir, "median_intensity.txt"), 'w') as f:
+# 		f.write(str(stats.median))
+# 	return float(stats.median)
 	
-def getMedian(numericValues):
-	theValues = sorted(numericValues)
+# def getMedian(numericValues):
+# 	theValues = sorted(numericValues)
 	
-	if len(theValues) % 2 == 1:
-		return float(theValues[(len(theValues)+1)/2-1])
-	else:
-		lower = theValues[len(theValues)/2-1]
-		upper = theValues[len(theValues)/2]
-		return (float(lower + upper)) / 2 
+# 	if len(theValues) % 2 == 1:
+# 		return float(theValues[(len(theValues)+1)/2-1])
+# 	else:
+# 		lower = theValues[len(theValues)/2-1]
+# 		upper = theValues[len(theValues)/2]
+# 		return (float(lower + upper)) / 2 
 	
 if __name__ in ['__builtin__', '__main__']:
 	with open(jsonpath, 'r') as f:
@@ -310,12 +384,15 @@ if __name__ in ['__builtin__', '__main__']:
 	min_photons = d['min_photons']
 	sr_scale = d['sr_scale']
 	run_fidicial_correction = d['fiducial_correction']['run']
-	fid_file = d['fiducial_correction']['fid_file']
+	correction_method = d['fiducial_correction']['correction_method']
 	fid_brightness = d['fiducial_correction']['fid_brightness']
 	fid_size = d['fiducial_correction']['fid_size']
 	fid_last_time = d['fiducial_correction']['fid_last_time']
 	smoothing_para = d['fiducial_correction']['smoothing_para']
 	limit_smoothing = d['fiducial_correction']['limit_smoothing']
+	bin_size = d['fiducial_correction']['bin_size']
+	segpara = d['fiducial_correction']['segpara']
+	script_dir = d['script_dir']
 	
 #	with open(jsonpath, 'w') as f:
 #		json.dump(d, f, indent=2) 	# Report back the results to python
@@ -334,19 +411,19 @@ if __name__ in ['__builtin__', '__main__']:
 		List_of_mydir.append((img, mydir))
 		i += 1
 
-	if bg_measurement['run'] and bg_measurement['correct_precision']:
-		bg_dict = {}
-		for img, mydir in List_of_mydir:
-			bg_dict[img] = create_image_pixel_median(img, mydir)
-		kappa = bg_measurement['kappa']
-		med_intensity = getMedian(bg_dict.values())
-		pre_dict = {}
-		for img, mydir in List_of_mydir:
-			intensity = bg_dict[img]
-			img_pre = math.exp(kappa*(intensity/med_intensity-1))*precision
-			pre_dict[img] = img_pre
-			with open(op.join(mydir, "corrected_precision.txt"), 'w') as f:
-				f.write(str(img_pre))
+	# if bg_measurement['run'] and bg_measurement['correct_precision']:
+	# 	bg_dict = {}
+	# 	for img, mydir in List_of_mydir:
+	# 		bg_dict[img] = create_image_pixel_median(img, mydir)
+	# 	kappa = bg_measurement['kappa']
+	# 	med_intensity = getMedian(bg_dict.values())
+	# 	pre_dict = {}
+	# 	for img, mydir in List_of_mydir:
+	# 		intensity = bg_dict[img]
+	# 		img_pre = math.exp(kappa*(intensity/med_intensity-1))*precision
+	# 		pre_dict[img] = img_pre
+	# 		with open(op.join(mydir, "corrected_precision.txt"), 'w') as f:
+	# 			f.write(str(img_pre))
 					
 	for img, mydir in List_of_mydir:
 		r = op.dirname(img)
@@ -362,7 +439,7 @@ if __name__ in ['__builtin__', '__main__']:
 			log_dict[img]['GDSC_SMLM'] = 'Error: {}'.format(e) # GDSC_SMLM peakfit failed
 		else:
 			if run_fidicial_correction:
-				if fid_file is True:
+				if correction_method == 'fid_file':
 					try:
 						flag = Correct_fidicials_with_fid(r, mydir, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing)
 						if not flag:
@@ -371,7 +448,8 @@ if __name__ in ['__builtin__', '__main__']:
 					except Exception as e:
 						log_dict[img] = {}
 						log_dict[img]['Fiducials'] = 'Error: {}'.format(e) # Correct fiducials failed
-				elif fid_file == 'drift':
+				
+				elif correction_method == 'drift':
 					try:
 						flag = Correct_fidicials_with_drift(r, mydir, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing)
 						if not flag:
@@ -380,8 +458,18 @@ if __name__ in ['__builtin__', '__main__']:
 					except Exception as e:
 						log_dict[img] = {}
 						log_dict[img]['Fiducials'] = 'Error: {}'.format(e) # Correct fiducials failed
+				
+				elif correction_method == 'corr':
+					try:
+						flag = Correct_drift_with_correlation(r, mydir, sr_scale, w, h, script_dir, pixel_size, bin_size, segpara, smoothing_para, limit_smoothing)
+						if not flag:
+							log_dict[img] = {}
+							log_dict[img]['Fiducials'] = 'none' # No fiducials detected
+					except Exception as e:
+						log_dict[img] = {}
+						log_dict[img]['Fiducials'] = 'Error: {}'.format(e) # Correct fiducials failed
 
-				else:
+				elif correction_method == 'auto_fid':
 					try:
 						flag = Find_fidicials(mydir, fid_brightness, fid_size, fid_last_time)
 						if flag:

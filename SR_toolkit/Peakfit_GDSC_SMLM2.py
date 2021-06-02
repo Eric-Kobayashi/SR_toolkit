@@ -11,6 +11,8 @@ import ij.plugin.frame.RoiManager as RoiManager
 import ij.plugin.ZProjector as ZProjector
 import json
 from ij.plugin import SubstackMaker
+import subprocess
+import time
 
 def GDSC_SMLM(directory, file_name, mydir, trim_track, bg_measurement, spot_filter, pixel_size, camera_gain, camera_bias, frame_length, signal_strength, precision, min_photons, sr_scale):
 	try:
@@ -98,6 +100,7 @@ def Find_fidicials(directory, fid_brightness, fid_size, fid_last_time):
 			imp.setRoi(x, y, 1, 1)
 			IJ.run(imp, "Add...", "value=255")
 		imp.killRoi()
+		IJ.run("Input/Output...", "jpeg=85 gif=-1 file=.txt use_file copy_row save_column")
 		IJ.run(imp, "Find Maxima...", "noise=10 output=[List]")
 		result = IJ.getTextPanel()
 		result.saveAs(op.join(directory, "Fiducials.txt"))
@@ -118,6 +121,52 @@ def Find_fidicials(directory, fid_brightness, fid_size, fid_last_time):
 			rm.addRoi(imp.getRoi())
 			imp.killRoi()
 		return True
+
+def Correct_fidicials_with_drift(img_dir, directory, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing):	
+	fit_name = "FitResults_Corrected.txt"
+	IJ.run("Clear Memory Results", "All")
+	fitresultfile = op.join(directory, "Image.results.xls")
+	IJ.redirectErrorMessages()
+	IJ.run("Results Manager", "input=File input_file=["+fitresultfile+"] table=ImageJ "+
+	"image=[Localisations (width=precision)] results_format=None results_file=[] save_to_memory "+
+	"table_distance_unit=[pixel (px)] table_intensity_unit=photon table_angle_unit=[unknown (na)] "+
+	"table_show_fitting_data table_show_noise_data table_show_precision table_precision=4 "+
+	"equalised image_scale="+str(sr_scale))
+	drift_file = op.join(directory, "Drift.txt")
+	try:
+		sh.copyfile(op.join(img_dir, "Drift.txt"), drift_file)
+	except:
+		IJ.run("Close All", "")
+		return False
+	try:
+		IJ.redirectErrorMessages()
+		IJ.run("Drift Calculator", "input=[Image (LVM LSE)] method=[Drift File] "+
+		"max_iterations=50 relative_error=0.010 smoothing="+str(smoothing_para)+
+		" {}".format("limit_smoothing " if limit_smoothing else "")+
+		"min_smoothing_points=10 max_smoothing_points=50 smoothing_iterations=1 "+
+		"update_method=[New dataset] save_drift "+
+		"drift_file=["+drift_file+"]")
+	except:
+		IJ.run("Close All", "")
+		return False
+
+	if not op.isfile(drift_file):
+		IJ.run("Close All", "")
+		return False
+		
+	wm.getWindow("Fit Results").close()
+	IJ.redirectErrorMessages()
+	IJ.run("Results Manager", "input=[Image (LVM LSE) (Corrected)] table=ImageJ "+
+	"image=[Localisations (width=precision)] results_format=None results_file=[] save_to_memory "+
+	"table_distance_unit=[pixel (px)] table_intensity_unit=photon table_angle_unit=[unknown (na)] "+
+	"table_show_fitting_data table_show_noise_data table_show_precision table_precision=4 "+
+	"equalised image_scale="+str(sr_scale))
+
+	IJ.selectWindow("Fit Results")
+	IJ.saveAs("text", op.join(directory, fit_name))
+	IJ.run("Close All", "")
+	return True
+		
 		
 def Correct_fidicials_with_fid(img_dir, directory, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing):
 	xylist = []
@@ -222,25 +271,25 @@ def Correct_fidicials(directory, sr_scale, smoothing_para, limit_smoothing):
 	IJ.run("Close All", "")
 	return True
 
-def create_image_pixel_median(img, savedir): 
-	imp = IJ.openVirtual(img)
-	IJ.run(imp, "Hyperstack to Stack", "")
-	ave_imp = ZProjector.run(imp, "avg")
-	stats = ave_imp.getStatistics(0x10000)
-	IJ.run("Close All", "")
-	with open(op.join(savedir, "median_intensity.txt"), 'w') as f:
-		f.write(str(stats.median))
-	return float(stats.median)
+# def create_image_pixel_median(img, savedir): 
+# 	imp = IJ.openVirtual(img)
+# 	IJ.run(imp, "Hyperstack to Stack", "")
+# 	ave_imp = ZProjector.run(imp, "avg")
+# 	stats = ave_imp.getStatistics(0x10000)
+# 	IJ.run("Close All", "")
+# 	with open(op.join(savedir, "median_intensity.txt"), 'w') as f:
+# 		f.write(str(stats.median))
+# 	return float(stats.median)
 	
-def getMedian(numericValues):
-	theValues = sorted(numericValues)
+# def getMedian(numericValues):
+# 	theValues = sorted(numericValues)
 	
-	if len(theValues) % 2 == 1:
-		return float(theValues[(len(theValues)+1)/2-1])
-	else:
-		lower = theValues[len(theValues)/2-1]
-		upper = theValues[len(theValues)/2]
-		return (float(lower + upper)) / 2 
+# 	if len(theValues) % 2 == 1:
+# 		return float(theValues[(len(theValues)+1)/2-1])
+# 	else:
+# 		lower = theValues[len(theValues)/2-1]
+# 		upper = theValues[len(theValues)/2]
+# 		return (float(lower + upper)) / 2 
 	
 if __name__ in ['__builtin__', '__main__']:
 	with open(jsonpath, 'r') as f:
@@ -259,8 +308,9 @@ if __name__ in ['__builtin__', '__main__']:
 	min_photons = d['min_photons']
 	sr_scale = d['sr_scale']
 	run_fidicial_correction = d['fiducial_correction']['run']
-	fid_file = d['fiducial_correction']['fid_file']
-	fid_brightness = (d['fiducial_correction']['fid_brightness']*1.0)/camera_gain
+	correction_method = d['fiducial_correction']['correction_method']
+	
+	fid_brightness = (d['fiducial_correction']['fid_brightness']*1.0)/camera_gain
 	fid_size = d['fiducial_correction']['fid_size']
 	fid_last_time = d['fiducial_correction']['fid_last_time']
 	smoothing_para = d['fiducial_correction']['smoothing_para']
@@ -284,19 +334,19 @@ if __name__ in ['__builtin__', '__main__']:
 		List_of_mydir.append((img, mydir))
 		i += 1
 
-	if bg_measurement['run'] and bg_measurement['correct_precision']:
-		bg_dict = {}
-		for img, mydir in List_of_mydir:
-			bg_dict[img] = create_image_pixel_median(img, mydir)
-		kappa = bg_measurement['kappa']
-		med_intensity = getMedian(bg_dict.values())
-		pre_dict = {}
-		for img, mydir in List_of_mydir:
-			intensity = bg_dict[img]
-			img_pre = math.exp(kappa*(intensity/med_intensity-1))*precision
-			pre_dict[img] = img_pre
-			with open(op.join(mydir, "corrected_precision.txt"), 'w') as f:
-				f.write(str(img_pre))
+	# if bg_measurement['run'] and bg_measurement['correct_precision']:
+	# 	bg_dict = {}
+	# 	for img, mydir in List_of_mydir:
+	# 		bg_dict[img] = create_image_pixel_median(img, mydir)
+	# 	kappa = bg_measurement['kappa']
+	# 	med_intensity = getMedian(bg_dict.values())
+	# 	pre_dict = {}
+	# 	for img, mydir in List_of_mydir:
+	# 		intensity = bg_dict[img]
+	# 		img_pre = math.exp(kappa*(intensity/med_intensity-1))*precision
+	# 		pre_dict[img] = img_pre
+	# 		with open(op.join(mydir, "corrected_precision.txt"), 'w') as f:
+	# 			f.write(str(img_pre))
 
 	for img, mydir in List_of_mydir:
 		r = op.dirname(img)
@@ -312,7 +362,7 @@ if __name__ in ['__builtin__', '__main__']:
 			log_dict[img]['GDSC_SMLM'] = 'Error: {}'.format(e) # GDSC_SMLM peakfit failed
 		else:
 			if run_fidicial_correction:
-				if fid_file:
+				if correction_method == 'fid_file':
 					try:
 						flag = Correct_fidicials_with_fid(r, mydir, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing)
 						if not flag:
@@ -321,7 +371,18 @@ if __name__ in ['__builtin__', '__main__']:
 					except Exception as e:
 						log_dict[img] = {}
 						log_dict[img]['Fiducials'] = 'Error: {}'.format(e) # Correct fiducials failed
-				else:
+				
+				elif correction_method == 'drift':
+					try:
+						flag = Correct_fidicials_with_drift(r, mydir, sr_scale, w, h, fid_size, smoothing_para, limit_smoothing)
+						if not flag:
+							log_dict[img] = {}
+							log_dict[img]['Fiducials'] = 'none' # No fiducials detected
+					except Exception as e:
+						log_dict[img] = {}
+						log_dict[img]['Fiducials'] = 'Error: {}'.format(e) # Correct fiducials failed
+				
+				elif correction_method == 'auto_fid':
 					try:
 						flag = Find_fidicials(mydir, fid_brightness, fid_size, fid_last_time)
 						if flag:

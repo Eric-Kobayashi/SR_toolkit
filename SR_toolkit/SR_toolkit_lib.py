@@ -46,6 +46,7 @@ from subprocess import call
 import warnings 
 import ctypes
 import uuid
+import tifffile
 from SR_fit_lib import SR_fit
 
 class Analysis(object):
@@ -121,6 +122,29 @@ class Analysis(object):
         List_of_images.sort()
         self.imglist = List_of_images
         self.n_img = len(List_of_images)
+
+    def _combine_stacks(self):
+        '''
+        Search for all
+        '''
+        List_of_dirs = []
+        for roots, dirs, files in os.walk(self.path):
+            for d in dirs:
+                full_d = op.join(roots, d)
+                if any('.tiff' in f for f in os.listdir(full_d)) and not any(f.endswith('_srstack.tif') for f in os.listdir(full_d)):
+                    List_of_dirs.append(full_d)
+
+        for d in List_of_dirs:
+            dir_name = op.basename(d)
+            with tifffile.TiffWriter(op.join(d, '{}_srstack.tif'.format(dir_name))) as stack:
+                for filename in os.listdir(d):
+                    if filename.endswith('.tiff') and 'srstack' not in filename:
+                        image = op.join(d, filename)
+                        stack.save(
+                            tifffile.imread(image), 
+                            photometric='minisblack', 
+                            contiguous=True
+                        )
         
     def peak_fit(self, verbose=True, **kwargs):
         '''
@@ -131,6 +155,7 @@ class Analysis(object):
         d = deepcopy(kwargs)
         d['filelist'] = self.imglist
         d['results_dir'] = self.results_dir
+        d['script_dir'] = op.dirname(self.config_d['GDSCSMLM1_script_path'])
         with open(self.json_file, 'w') as f:
             json.dump(d, f, indent=2)
         if d['GDSC_SMLM_version'] == 1:
@@ -194,21 +219,22 @@ class Analysis(object):
         
         self.fit_name = 'FitResults_FeuRemoved.txt'
         
-    def _create_symlinks(self):
-        assert ctypes.windll.shell32.IsUserAnAdmin(), 'You need Admin'\
-            ' permission to create symlink on Windows, try running Python as an'\
-            ' administrator.\n\n'
-        List_of_image_path_file = []
-        for roots, dirs, files in os.walk(self.results_dir):
-            for f in files:
-                if f.endswith('.path.txt'):
-                    List_of_image_path_file.append((roots, f))
+    # The symlink function is defunct
+    # def _create_symlinks(self): 
+    #     assert ctypes.windll.shell32.IsUserAnAdmin(), 'You need Admin'\
+    #         ' permission to create symlink on Windows, try running Python as an'\
+    #         ' administrator.\n\n'
+    #     List_of_image_path_file = []
+    #     for roots, dirs, files in os.walk(self.results_dir):
+    #         for f in files:
+    #             if f.endswith('.path.txt'):
+    #                 List_of_image_path_file.append((roots, f))
         
-        for r, f in List_of_image_path_file:
-            with open(op.join(r, f)) as path_f:
-                src = path_f.read()
-            link = op.join(r, 'Raw_image.lnk')
-            os.symlink(src, link)
+    #     for r, f in List_of_image_path_file:
+    #         with open(op.join(r, f)) as path_f:
+    #             src = path_f.read()
+    #         link = op.join(r, 'Raw_image.lnk')
+    #         os.symlink(src, link)
             
     def _rendering(self, **kwargs):
         d = deepcopy(kwargs)
@@ -219,7 +245,7 @@ class Analysis(object):
             ImageJ_path = self.config_d['imageJ_GDSCSMLM2_path']
             Rendering_script_path = self.config_d['Rendering_script_path2']
 
-        d2 = {'sr_scale': d['sr_scale'], 'results_dir': self.results_dir}
+        d2 = {'sr_scale': d['sr_scale'], 'results_dir': self.results_dir, 'rendering_method':d['Rendering_SR']}
         with open(self.json_file, 'w') as f:
             json.dump(d2, f, indent=2)
 
@@ -243,7 +269,11 @@ class Analysis(object):
             if verbose:
                 sys.stdout.write('Looking for tiff image files meeting '\
                 'defined image condition in \npath: {}...\n'.format(self.path))  
-            self._search_images(image_condition)
+            if image_condition == 'separate_images':
+                self._combine_stacks()
+                self._search_images(lambda img: img.endswith('_stack.tif'))
+            else:
+                self._search_images(image_condition)
             assert self.n_img > 0, 'No image found!\n\n'
             if verbose:
                 sys.stdout.write("{} images found.\n\n".format(self.n_img))
@@ -277,8 +307,8 @@ class Analysis(object):
         self.cluster_fit(verbose=verbose, **kwargs)               
         self._logging(**kwargs)    
     
-        if kwargs['GDSC_SMLM_peak_fit'] and kwargs['create_symlink_for_images']:
-            self._create_symlinks()
+        # if kwargs['GDSC_SMLM_peak_fit'] and kwargs['create_symlink_for_images']:
+        #     self._create_symlinks()
         
         try: os.remove(self.json_file)
         except: pass
@@ -304,9 +334,11 @@ class Analysis(object):
             self.fit_name = kwargs['fitresults_file_name']
         else:
             # Remove fiducials
-            if kwargs['fiducial_correction']['run'] and kwargs['fiducial_correction']['fid_file'] != 'drift':
+            if kwargs['fiducial_correction']['run'] and \
+            (kwargs['fiducial_correction']['correction_method'] not in ['drift', 'corr']):
                 self._remove_fid(**kwargs)
-            elif kwargs['fiducial_correction']['run'] and kwargs['fiducial_correction']['fid_file'] == 'drift':
+            elif kwargs['fiducial_correction']['run'] and \
+            (kwargs['fiducial_correction']['correction_method'] in ['drift', 'corr']):
                 self.fit_name = 'FitResults_Corrected.txt'
                 
         self._search_fitresults()
@@ -476,46 +508,45 @@ if __name__ == '__main__':
     importlib.reload(SR_fit_lib)
     from SR_fit_lib import SR_fit
     
-    directory = r"C:\Users\Artemisia\Downloads\test_code"
-    image_condition = lambda img: img.endswith('_561.tif')  # Change conditions to search for imagestacks
+    directory = r"C:\Users\Eric\Documents\SR_toolkit_reboot\561"
+    # image_condition = 'separate_images' # Change conditions to search for imagestacks
+    image_condition = lambda img: img.endswith('.tif')
     input_dict = {
     # ==== Parameters for all analysis ====
-    'pixel_size': 98.6 , # nm
+    'pixel_size': 107 , # nm
     'sr_scale': 8 , # The scale used in length analysis and generation of super-res images 
-    'camera_bias': 500.0 ,
-    'camera_gain': 55.50 ,
+    'camera_bias': 400.0 ,
+    'camera_gain': 84.40 ,
     'frame_length': 50 , # ms per frame, i.e. exposure time
-    'create_symlink_for_images': False, # Needs admin mode. Do not run if images are in Dropbox.
     'GDSC_SMLM_version': 1, # 1 or 2
     
     # ==== Parameters for GDSC SMLM fitting ====
-    'GDSC_SMLM_peak_fit': False, # If False, the parameters for GDSC SMLM fitting will be ignored, only cluster_analysis will be run
-    'trim_track': {'run': True, 'frame_number': 4000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
-    'BG_measurement': {'run': True, 'correct_precision': False, 'kappa': 0.5}, # measure the background of the image_stack. (median pixel value) 
-    # if correct_precision set to True, the fitting precision will be adjusted according to the background level: higher background -> higher precision threshold. kappa controls the extent of the adjustment.
+    'GDSC_SMLM_peak_fit': True, # If False, the parameters for GDSC SMLM fitting will be ignored, only cluster_analysis will be run
+    'trim_track': {'run': False, 'frame_number': 6000, 'from_end': True}, # trim the stack to the required frame number, from_end controls trim from end or beginning 
+    'BG_measurement': True, # measure the background of the image_stack. (median pixel value) 
     'signal_strength': 40, # Caution: Different measure in GDSCSMLM1 and GDSCSMLM 2
     'precision': 20.0, # nm
     'min_photons': 0,
-    'fiducial_correction': {'run':True, 'fid_file':False, 'fid_brightness':50000,
-    'fid_size': 6, 'fid_last_time':500, 'smoothing_para':0.25, 'limit_smoothing':True},
-    # fid_file enables manually defined fiducials saved in 'Fiducials.txt', 
-    # fid_brightness, fid_size, fid_last_time (frames) defines the criteria for automatically finding fiducials
-    # smoothing_para and limit_smoothing controls the correction smoothing. If smoothing fails try setting limit_smotthing to False
+    'fiducial_correction': {'run':False, 'correction_method':'auto_fid', # correction_method: 'auto_fid', 'fid_file', 'drift', 'corr' 
+    'bin_size': 20, 'segpara':500, # parameters for 'corr' - correlation correction, bin_size in nm, segpara in frames
+    'fid_brightness':10000, 'fid_size': 6, 'fid_last_time':500, # parameters for 'auto_fid' - automatically finding fiducials, fid_last_time in frames
+    'smoothing_para':0.25, 'limit_smoothing':True},  # smoothing_para and limit_smoothing controls the correction smoothing. If smoothing fails try setting limit_smotthing to False
+    
     'spot_filter': {'filter_type': 'Difference', 'smoothing':0.20, 'smoothing2': 1.50}, # Only applicable to GDSC_SMLM_2, filter_type either Single or Difference,
     # smoothing, smoothing2 control the filter
     
     # ==== Parameters for cluster analysis and measurements ====
-    'fitresults_file_name': 'FitResults_FeuRemoved.txt', # default: 'FitResults.txt' or 'FitResults_FeuRemoved.txt' if fiducial corrected
-    
-    'temporal_grouping': {'run': True, 'dThresh':20, 'min_loc':2, 'max_mol_area':float('inf'),
-     'tThresh':2500, 'min_frame':2, 'min_burst':2, 'min_on_prop':0},
-     
+    'fitresults_file_name': 'default', # default: 'FitResults.txt' or 'FitResults_FeuRemoved.txt' if fiducial corrected
+    'temporal_grouping': {'run': True, 'dThresh':15, 'min_loc':2, 'max_mol_area':float('inf'),
+     'tThresh':101, 'min_frame':2, 'min_burst':2, 'min_on_prop':0.0},
+     # dThresh - nm, max_mol_area - nm2, tThresh - ms
     'cluster_analysis': {'run': True, 'cluster_subject':'burst', # burst, mol, loc
-    'DBSCAN_eps_nm':200, 'DBSCAN_min_samples':2},
-    'length_measure': {'run':False, 'algorithm':'close', 'sigma':2}, # algorithm: blur or close; if blur, sigma is the gaussian sigma; if close, sigma is the closing square size
+    'DBSCAN_eps_nm':75, 'DBSCAN_min_samples':2},
+    # burst for STORM/PALM, mol for PAINT
+    'length_measure': {'run':True, 'algorithm':'close', 'sigma':2}, # algorithm: blur or close; if blur, sigma is the gaussian sigma; if close, sigma is the closing square size
     'eccentricity_measure': True ,
     'convexhull_measure': True , # measure the area of the cluster
-    'Rendering_SR': False , # rendering clustered SR images in imageJ
+    'Rendering_SR': 'loc_pre' , # loc, loc_pre, or False, rendering clustered SR images in imageJ
     'save_histogram':True,
     }
 

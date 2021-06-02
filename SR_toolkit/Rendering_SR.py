@@ -15,6 +15,8 @@ if __name__ in ['__builtin__', '__main__']:
 		d = json.load(f)	# Configuration dictionary
 	results_dir = d['results_dir']
 	sr_scale = d['sr_scale']
+	convert_render = {'loc': 'Localisations', 'loc_pre': 'Localisations (width=precision)'}
+	rendering_method = convert_render[d['rendering_method']]
 
 	# Fix the configuration file non-existence problem
 	imageJ_path = os.getcwd()
@@ -43,7 +45,7 @@ if __name__ in ['__builtin__', '__main__']:
 				IJ.redirectErrorMessages()
 				IJ.run("Results Manager", "coordinate=["+
 				fitresults+"] input=File input_file=["+fitresults+"] results_table=Uncalibrated "+
-				"image=[Localisations (width=precision)] weighted equalised image_precision=1.50 "+
+				"image=["+rendering_method+"] weighted equalised image_precision=1.50 "+
 				"image_scale="+str(sr_scale)+" image_window=0")
 			except:
 				continue

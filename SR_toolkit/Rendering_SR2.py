@@ -14,7 +14,8 @@ if __name__ in ['__builtin__', '__main__']:
 		d = json.load(f)	# Configuration dictionary
 	results_dir = d['results_dir']
 	sr_scale = d['sr_scale']
-	List_of_fits = []
+	convert_render = {'loc': 'Localisations', 'loc_pre': 'Localisations (width=precision)'}
+	rendering_method = convert_render[d['rendering_method']]
 
 	for to_fit in ['burst', 'mol', 'cluster']:
 		List_of_fits = []
@@ -30,7 +31,7 @@ if __name__ in ['__builtin__', '__main__']:
 			try:
 				IJ.redirectErrorMessages()
 				IJ.run("Results Manager", "input_file=["+fitresults+"] input=File input_file=["+fitresults+"] "+
-				"table=ImageJ image=[Localisations (width=precision)] results_format=None results_file=[] "+
+				"table=ImageJ image=["+rendering_method+"] results_format=None results_file=[] "+
 				"table_distance_unit=[pixel (px)] table_intensity_unit=photon table_angle_unit=[unknown (na)] "+
 				"table_precision=4 equalised image_scale="+str(sr_scale))
 			except:
