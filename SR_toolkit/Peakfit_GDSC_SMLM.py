@@ -414,12 +414,9 @@ if __name__ in ['__builtin__', '__main__']:
 	for img, mydir in List_of_mydir:
 		r = op.dirname(img)
 		f = op.basename(img)
-		if bg_measurement:
-			corrected_precision = pre_dict[img]
-		else:
-			corrected_precision = precision
+
 		try:
-			w, h = GDSC_SMLM(r, f, mydir, trim_track, bg_measurement, gdsc_smlm_xml, pixel_size, camera_gain, camera_bias, frame_length, signal_strength, corrected_precision, min_photons, sr_scale)
+			w, h = GDSC_SMLM(r, f, mydir, trim_track, bg_measurement, gdsc_smlm_xml, pixel_size, camera_gain, camera_bias, frame_length, signal_strength, precision, min_photons, sr_scale)
 		except Exception as e:
 			log_dict[img] = {}
 			log_dict[img]['GDSC_SMLM'] = 'Error: {}'.format(e) # GDSC_SMLM peakfit failed
