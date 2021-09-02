@@ -31,7 +31,7 @@ def GDSC_SMLM(directory, file_name, mydir, trim_track, bg_measurement, gdsc_smlm
 			s = SubstackMaker()
 			trim_sting = "{}-{}".format(imp_frame-trim_track['frame_number']+1, imp_frame) if (trim_track['from_end']) else "{}-{}".format(1, trim_track['frame_number'])
 			imp = s.makeSubstack(imp, trim_sting)
-	if bg_measurement['run'] and not bg_measurement['correct_precision']:
+	if bg_measurement:
 		IJ.run(imp, "Hyperstack to Stack", "")
 		ave_imp = ZProjector.run(imp, "avg")
 		stats = ave_imp.getStatistics(0x10000)
@@ -410,25 +410,11 @@ if __name__ in ['__builtin__', '__main__']:
 			os.makedirs(mydir)
 		List_of_mydir.append((img, mydir))
 		i += 1
-
-	# if bg_measurement['run'] and bg_measurement['correct_precision']:
-	# 	bg_dict = {}
-	# 	for img, mydir in List_of_mydir:
-	# 		bg_dict[img] = create_image_pixel_median(img, mydir)
-	# 	kappa = bg_measurement['kappa']
-	# 	med_intensity = getMedian(bg_dict.values())
-	# 	pre_dict = {}
-	# 	for img, mydir in List_of_mydir:
-	# 		intensity = bg_dict[img]
-	# 		img_pre = math.exp(kappa*(intensity/med_intensity-1))*precision
-	# 		pre_dict[img] = img_pre
-	# 		with open(op.join(mydir, "corrected_precision.txt"), 'w') as f:
-	# 			f.write(str(img_pre))
 					
 	for img, mydir in List_of_mydir:
 		r = op.dirname(img)
 		f = op.basename(img)
-		if bg_measurement['run'] and bg_measurement['correct_precision']:
+		if bg_measurement:
 			corrected_precision = pre_dict[img]
 		else:
 			corrected_precision = precision
