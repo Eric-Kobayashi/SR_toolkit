@@ -298,7 +298,7 @@ class SR_fit(object):
             
             for b, charas in track.groupby('Burst_ID'):
                 if b == 0: continue # Non-clustered events
-                burst = charas.mean()
+                burst = charas.mean(numeric_only=True)
                 burst['ON_time'] = len(charas)*self.frame_length # The actual ON time (excluding blinking time)
                 burst['ON_span'] = (max(charas['Frame'])-min(charas['Frame'])+1)*self.frame_length # The apparent ON time (including blinking time)
                 burst['ON_prop'] = burst['ON_time']/burst['ON_span']
