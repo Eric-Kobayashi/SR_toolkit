@@ -338,7 +338,7 @@ class SR_fit(object):
 
         mol_df = []
         for m, charas in self.burst_df.groupby('Molecule_ID'):
-            mol = charas.mean(skipna=True)
+            mol = charas.mean(numeric_only=True)
             mol['ON_time'] = charas['ON_time'].sum()
             mol['ON_span'] = charas['ON_span'].sum()
             mol['OFF_time'] = charas['OFF_time'].sum(skipna=True)
