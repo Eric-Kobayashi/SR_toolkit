@@ -1,34 +1,6 @@
 '''
-SR_toolkit_v3_5
+The library includes the classes and methods related to metadata handling.
 
-Issued: 28-04-2019
-@author: Eric Kobayashi
-
-Changes over v3_4:
-    
-    Major changes:
-        
-    1. Add temporal grouping: group localisations into molecules, then group
-    them into individual bursts (using 2D and 1D DBSCAN, respectively.) Filters
-    can be applied on burst number of molecule, molecule size and on time
-    proportion of burst (blinking molecules can be removed). The X, Y positions
-    and precisions in each group are averaged to enable further clustering.
-    
-    2. Add DBSCAN clustering with molecules or bursts. DBSCAN with bursts will 
-    be suitable with STORM/PALM, while molecule suits with PAINT.
-    
-    3. Remove the burst filter and burst analysis because temporal grouping 
-    does the same job.
-    
-    Minor changes:
-    
-    1. Move to_ImageJ.json to individual analysis folders, allowing multiple 
-    analysis conducted at the same time. 
-    
-    2. Simplify the compatiablity code with GDSC SMLM 2.
-    
-    3. Simplify the data saving code.
-    
 '''
 
 import os

@@ -1,3 +1,8 @@
+"""
+This is not my code.
+Credit to Yina Wang @ Hust.
+"""
+
 function rundriftcorr(directory, segpara, image_size, pixel_size, bin_size)
 
 addpath(directory);
